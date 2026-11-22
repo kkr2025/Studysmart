@@ -59,3 +59,22 @@ export interface TaskCompletion {
   student_id: string;
   completed_at: string;
 }
+
+export interface WeeklyTimetableItem {
+  id: string;
+  day_of_week: string; // 'Monday', 'Tuesday', etc.
+  class_name: string; // '10A', '10B' or 'All'
+  slot_number: number;
+  subject: string;
+  topic: string;
+  created_at?: string;
+}
+
+export interface TimetableCompletion {
+  id: string;
+  item_id: string;
+  student_id: string;
+  subject: string;
+  completion_date: string;
+  completed_at: string;
+}

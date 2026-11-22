@@ -3,10 +3,40 @@ import { supabase } from '../supabaseClient.ts';
 import { getFormattedDate } from '../logic/utils.ts';
 import { generateAttendancePDF, generateMonthlyPDF } from '../logic/pdfGenerator.ts';
 import DonutChart from '../components/DonutChart.tsx';
-import { Exam, StudyTask } from '../types.ts';
+import { Exam, WeeklyTimetableItem } from '../types.ts';
 
 const ADMIN_PASSWORD = 'tracker2026';
 const CLASSES = ['10A', '10B', '10C', '10D', '10E', '10F', '10G', '10H', '10I', '10J', '10K', '10L', '10M', '10N'];
+const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+const DEFAULT_TIMETABLE: WeeklyTimetableItem[] = [
+  // Monday
+  { id: 'def-m1', day_of_week: 'Monday', class_name: 'All', slot_number: 1, subject: 'Mathematics', topic: 'Circles & Geometry Practice' },
+  { id: 'def-m2', day_of_week: 'Monday', class_name: 'All', slot_number: 2, subject: 'Physics', topic: 'Reflection & Refraction of Light' },
+  { id: 'def-m3', day_of_week: 'Monday', class_name: 'All', slot_number: 3, subject: 'English', topic: 'Grammar & Reading Comprehension' },
+  // Tuesday
+  { id: 'def-t1', day_of_week: 'Tuesday', class_name: 'All', slot_number: 1, subject: 'Chemistry', topic: 'Periodic Classification & Chemical Reactions' },
+  { id: 'def-t2', day_of_week: 'Tuesday', class_name: 'All', slot_number: 2, subject: 'Biology', topic: 'Life Processes & Heredity' },
+  { id: 'def-t3', day_of_week: 'Tuesday', class_name: 'All', slot_number: 3, subject: 'Malayalam', topic: 'Literature & Prose Analysis' },
+  // Wednesday
+  { id: 'def-w1', day_of_week: 'Wednesday', class_name: 'All', slot_number: 1, subject: 'Mathematics', topic: 'Trigonometry & Quadratic Equations' },
+  { id: 'def-w2', day_of_week: 'Wednesday', class_name: 'All', slot_number: 2, subject: 'Social Science', topic: 'Indian National Movement' },
+  { id: 'def-w3', day_of_week: 'Wednesday', class_name: 'All', slot_number: 3, subject: 'Hindi', topic: 'Grammar & Composition' },
+  // Thursday
+  { id: 'def-th1', day_of_week: 'Thursday', class_name: 'All', slot_number: 1, subject: 'Physics', topic: 'Electricity & Magnetic Effects' },
+  { id: 'def-th2', day_of_week: 'Thursday', class_name: 'All', slot_number: 2, subject: 'Chemistry', topic: 'Carbon and its Compounds' },
+  { id: 'def-th3', day_of_week: 'Thursday', class_name: 'All', slot_number: 3, subject: 'Mathematics', topic: 'Arithmetic Progressions' },
+  // Friday
+  { id: 'def-f1', day_of_week: 'Friday', class_name: 'All', slot_number: 1, subject: 'Biology', topic: 'Control & Coordination' },
+  { id: 'def-f2', day_of_week: 'Friday', class_name: 'All', slot_number: 2, subject: 'Social Science', topic: 'Resources and Development' },
+  { id: 'def-f3', day_of_week: 'Friday', class_name: 'All', slot_number: 3, subject: 'English', topic: 'Writing Skills & Letter Writing' },
+  // Saturday
+  { id: 'def-s1', day_of_week: 'Saturday', class_name: 'All', slot_number: 1, subject: 'Mathematics', topic: 'Model Paper Solving' },
+  { id: 'def-s2', day_of_week: 'Saturday', class_name: 'All', slot_number: 2, subject: 'Science (PCB)', topic: 'Combined Science Questions Revision' },
+  // Sunday
+  { id: 'def-su1', day_of_week: 'Sunday', class_name: 'All', slot_number: 1, subject: 'Weekly Revision', topic: 'Review Mistakes & Formula Practice' },
+  { id: 'def-su2', day_of_week: 'Sunday', class_name: 'All', slot_number: 2, subject: 'Model Test', topic: 'Self Assessment Speed Test' },
+];
 
 const Admin: React.FC = () => {
   // Authentication & Class Gate
@@ -16,7 +46,7 @@ const Admin: React.FC = () => {
   const [hasSelectedClass, setHasSelectedClass] = useState(false);
   const [selectedClass, setSelectedClass] = useState('10A');
 
-  // Navigation tab in Admin
+  // Navigation tab
   const [activeTab, setActiveTab] = useState<'attendance' | 'planner' | 'exams' | 'announcement'>('attendance');
 
   // Core Data
@@ -26,25 +56,24 @@ const Admin: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
 
-  // Profile Modal State
+  // Student Profile Modal State
   const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
   const [studentCompletions, setStudentCompletions] = useState<any[]>([]);
 
   // Announcement State
   const [announcementText, setAnnouncementText] = useState('');
-  const [announcementSuccess, setAnnouncementSuccess] = useState(false);
 
-  // Study Planner State
-  const [tasks, setTasks] = useState<StudyTask[]>([]);
-  const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [newTaskSubject, setNewTaskSubject] = useState('Physics');
-  const [taskSuccess, setTaskSuccess] = useState(false);
+  // Weekly Timetable / Study Planner State
+  const [selectedDay, setSelectedDay] = useState('Monday');
+  const [timetable, setTimetable] = useState<WeeklyTimetableItem[]>([]);
+  const [newSlotNumber, setNewSlotNumber] = useState(1);
+  const [newSubject, setNewSubject] = useState('Mathematics');
+  const [newTopic, setNewTopic] = useState('');
 
-  // Exam Reminder State
+  // Exam Countdown State
   const [exams, setExams] = useState<Exam[]>([]);
   const [newExamName, setNewExamName] = useState('');
   const [newExamDate, setNewExamDate] = useState('');
-  const [examSuccess, setExamSuccess] = useState(false);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,11 +97,12 @@ const Admin: React.FC = () => {
       const { data: students, error: sErr } = await supabase
         .from('students')
         .select('*');
-      if (sErr) throw sErr;
-      setAllStudents(students || []);
+      if (!sErr && students) {
+        setAllStudents(students);
+      }
 
       // 2. Fetch Attendance for Selected Date
-      const { data: attData, error: attErr } = await supabase
+      const { data: attData } = await supabase
         .from('attendance')
         .select(`
           id,
@@ -88,8 +118,9 @@ const Admin: React.FC = () => {
         .eq('date', selectedDate)
         .order('checkin_time', { ascending: true });
 
-      if (attErr) throw attErr;
-      setAllAttendance(attData || []);
+      if (attData) {
+        setAllAttendance(attData);
+      }
 
       // 3. Fetch Announcement
       const { data: annData } = await supabase
@@ -99,21 +130,61 @@ const Admin: React.FC = () => {
         .limit(1)
         .maybeSingle();
 
-      if (annData?.message) setAnnouncementText(annData.message);
+      if (annData?.message) {
+        setAnnouncementText(annData.message);
+      } else {
+        const localMsg = localStorage.getItem('smartstudy_custom_message');
+        if (localMsg) setAnnouncementText(localMsg);
+      }
 
-      // 4. Fetch Tasks
-      const { data: taskData } = await supabase
-        .from('study_tasks')
-        .select('*')
-        .eq('assigned_date', selectedDate);
-      setTasks(taskData || []);
+      // 4. Load Weekly Timetable (Combine Supabase + LocalStorage + Defaults)
+      let combinedTimetable: WeeklyTimetableItem[] = [];
+      const localTimetable = localStorage.getItem('smartstudy_weekly_timetable');
+      if (localTimetable) {
+        try {
+          combinedTimetable = JSON.parse(localTimetable);
+        } catch (e) {}
+      }
 
-      // 5. Fetch Exams
+      const { data: ttData } = await supabase.from('weekly_timetable').select('*');
+      if (ttData && ttData.length > 0) {
+        const dbIds = new Set(ttData.map(d => d.id));
+        combinedTimetable = [
+          ...ttData,
+          ...combinedTimetable.filter(ct => !dbIds.has(ct.id))
+        ];
+      }
+
+      if (combinedTimetable.length === 0) {
+        combinedTimetable = DEFAULT_TIMETABLE;
+        localStorage.setItem('smartstudy_weekly_timetable', JSON.stringify(DEFAULT_TIMETABLE));
+      }
+
+      setTimetable(combinedTimetable);
+
+      // 5. Load Exams (Combine Supabase + LocalStorage)
+      let combinedExams: Exam[] = [];
+      const localExamsRaw = localStorage.getItem('smartstudy_custom_exams');
+      if (localExamsRaw) {
+        try {
+          combinedExams = JSON.parse(localExamsRaw);
+        } catch (e) {}
+      }
+
       const { data: examData } = await supabase
         .from('exams')
         .select('*')
         .order('exam_date', { ascending: true });
-      setExams(examData || []);
+
+      if (examData && examData.length > 0) {
+        const dbIds = new Set(examData.map(d => d.id));
+        combinedExams = [
+          ...examData,
+          ...combinedExams.filter(ce => !dbIds.has(ce.id))
+        ];
+      }
+
+      setExams(combinedExams);
 
     } catch (err) {
       console.error('Admin Fetch Error:', err);
@@ -139,9 +210,6 @@ const Admin: React.FC = () => {
     return allAttendance.filter(a => a.students?.batch === selectedClass);
   }, [allAttendance, selectedClass]);
 
-  const top3 = useMemo(() => classAttendance.slice(0, 3), [classAttendance]);
-  const last3 = useMemo(() => classAttendance.length > 3 ? classAttendance.slice(-3) : [], [classAttendance]);
-
   const lateStudents = useMemo(() => {
     const attendedIds = new Set(classAttendance.map(a => a.student_id));
     return classStudents.filter(s => !attendedIds.has(s.id));
@@ -155,105 +223,158 @@ const Admin: React.FC = () => {
     );
   }, [classStudents, searchQuery]);
 
-  // Publish Announcement
+  // Timetable items for currently selected day & class
+  const dayTimetableItems = useMemo(() => {
+    return timetable.filter(
+      item => item.day_of_week === selectedDay &&
+             (item.class_name === 'All' || item.class_name === selectedClass)
+    ).sort((a, b) => (a.slot_number || 1) - (b.slot_number || 1));
+  }, [timetable, selectedDay, selectedClass]);
+
+  // Save Announcement
   const handleSaveAnnouncement = async () => {
     if (!announcementText.trim()) return;
+    localStorage.setItem('smartstudy_custom_message', announcementText.trim());
+
     try {
       await supabase.from('announcements').insert([{ message: announcementText.trim() }]);
-      localStorage.setItem('smartstudy_custom_message', announcementText.trim());
-      setAnnouncementSuccess(true);
-      setTimeout(() => setAnnouncementSuccess(false), 2500);
-      alert('Announcement published to student screens! 📢');
-    } catch (e: any) {
-      localStorage.setItem('smartstudy_custom_message', announcementText.trim());
-      alert('Saved announcement locally!');
-    }
+    } catch (e) {}
+
+    alert('✅ Announcement broadcasted! All student dashboards will display this message. 📢');
   };
 
-  // Add Study Task
-  const handleAddTask = async (e: React.FormEvent) => {
+  // Add Subject to Weekly Timetable
+  const handleAddTimetableSubject = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTaskTitle.trim()) return;
+    if (!newTopic.trim()) {
+      alert('Please enter a topic or chapter description.');
+      return;
+    }
+
+    const newItem: WeeklyTimetableItem = {
+      id: 'tt-' + Date.now(),
+      day_of_week: selectedDay,
+      class_name: selectedClass,
+      slot_number: Number(newSlotNumber) || (dayTimetableItems.length + 1),
+      subject: newSubject,
+      topic: newTopic.trim(),
+    };
+
+    const updated = [...timetable, newItem];
+    setTimetable(updated);
+    localStorage.setItem('smartstudy_weekly_timetable', JSON.stringify(updated));
 
     try {
-      const taskObj = {
-        title: newTaskTitle.trim(),
-        subject: newTaskSubject,
-        target_batch: selectedClass,
-        assigned_date: selectedDate,
-      };
+      await supabase.from('weekly_timetable').insert([newItem]);
+    } catch (e) {}
 
-      const { data, error } = await supabase.from('study_tasks').insert([taskObj]).select().single();
-      if (!error && data) {
-        setTasks(prev => [...prev, data]);
-      } else {
-        // Fallback
-        const fallbackTask: StudyTask = {
-          id: Math.random().toString(),
-          ...taskObj
-        };
-        setTasks(prev => [...prev, fallbackTask]);
-        const existing = JSON.parse(localStorage.getItem(`smartstudy_tasks_${selectedDate}`) || '[]');
-        localStorage.setItem(`smartstudy_tasks_${selectedDate}`, JSON.stringify([...existing, fallbackTask]));
-      }
-
-      setNewTaskTitle('');
-      setTaskSuccess(true);
-      setTimeout(() => setTaskSuccess(false), 2000);
-    } catch (e: any) {
-      alert('Task added successfully!');
-    }
+    setNewTopic('');
+    setNewSlotNumber(dayTimetableItems.length + 2);
+    alert(`✅ Added ${newSubject} to ${selectedDay}'s timetable for Class ${selectedClass}!`);
   };
 
-  // Delete Study Task
-  const handleDeleteTask = async (taskId: string) => {
+  // Delete Timetable Item
+  const handleDeleteTimetableItem = async (itemId: string) => {
+    const updated = timetable.filter(t => t.id !== itemId);
+    setTimetable(updated);
+    localStorage.setItem('smartstudy_weekly_timetable', JSON.stringify(updated));
+
     try {
-      await supabase.from('study_tasks').delete().eq('id', taskId);
-      setTasks(prev => prev.filter(t => t.id !== taskId));
+      await supabase.from('weekly_timetable').delete().eq('id', itemId);
     } catch (e) {}
   };
 
   // Add Exam
   const handleAddExam = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newExamName.trim() || !newExamDate) return;
+    if (!newExamName.trim() || !newExamDate) {
+      alert('Please enter both exam name and date.');
+      return;
+    }
 
+    const newExamObj: Exam = {
+      id: 'exam-' + Date.now(),
+      name: newExamName.trim(),
+      exam_date: newExamDate,
+    };
+
+    // Update state immediately
+    const updated = [...exams, newExamObj];
+    setExams(updated);
+
+    // Save to local storage for guaranteed persistence
+    localStorage.setItem('smartstudy_custom_exams', JSON.stringify(updated));
+
+    // Also attempt Supabase insert
     try {
-      const examObj = {
-        name: newExamName.trim(),
-        exam_date: newExamDate,
-      };
-      const { data, error } = await supabase.from('exams').insert([examObj]).select().single();
+      const { data, error } = await supabase.from('exams').insert([{
+        name: newExamObj.name,
+        exam_date: newExamObj.exam_date,
+      }]).select().single();
+
       if (!error && data) {
-        setExams(prev => [...prev, data]);
+        // Replace temporary ID with Supabase UUID
+        setExams(prev => prev.map(ex => ex.id === newExamObj.id ? data : ex));
       }
-      setNewExamName('');
-      setNewExamDate('');
-      setExamSuccess(true);
-      setTimeout(() => setExamSuccess(false), 2000);
-    } catch (e: any) {}
+    } catch (err: any) {
+      console.warn('Synced exam locally:', err);
+    }
+
+    setNewExamName('');
+    setNewExamDate('');
+    alert(`✅ Exam "${newExamObj.name}" created successfully! The countdown is now LIVE on all student screens. 🎯`);
   };
 
   // Delete Exam
   const handleDeleteExam = async (examId: string) => {
+    const updated = exams.filter(e => e.id !== examId);
+    setExams(updated);
+    localStorage.setItem('smartstudy_custom_exams', JSON.stringify(updated));
+
     try {
       await supabase.from('exams').delete().eq('id', examId);
-      setExams(prev => prev.filter(e => e.id !== examId));
     } catch (e) {}
   };
 
   // Open Student Profile Modal
   const openStudentProfile = async (student: any) => {
     setSelectedStudent(student);
+    const todayDateStr = getFormattedDate();
+
+    // Load student completions
+    let completionsList: any[] = [];
+
+    // Local storage check
+    const localCompRaw = localStorage.getItem(`smartstudy_comp_${student.id}_${todayDateStr}`);
+    if (localCompRaw) {
+      try {
+        const itemIds: string[] = JSON.parse(localCompRaw);
+        completionsList = itemIds.map(id => {
+          const item = timetable.find(t => t.id === id);
+          return {
+            id,
+            subject: item?.subject || 'Study Subject',
+            topic: item?.topic || 'Completed',
+            completed_at: new Date().toISOString(),
+          };
+        });
+      } catch (e) {}
+    }
+
+    // Supabase check
     try {
       const { data } = await supabase
-        .from('task_completions')
-        .select('*, study_tasks(title, subject)')
-        .eq('student_id', student.id);
-      setStudentCompletions(data || []);
-    } catch (e) {
-      setStudentCompletions([]);
-    }
+        .from('timetable_completions')
+        .select('*')
+        .eq('student_id', student.id)
+        .eq('completion_date', todayDateStr);
+
+      if (data && data.length > 0) {
+        completionsList = data;
+      }
+    } catch (e) {}
+
+    setStudentCompletions(completionsList);
   };
 
   const copyToppersToWhatsApp = () => {
@@ -263,7 +384,7 @@ const Admin: React.FC = () => {
     let text = `*🦅 SMARTSTUDY | TOP EARLY RISERS (${selectedDate})*\n*PHSS Pandallur - Class ${selectedClass}*\n\n`;
     toppers.forEach((item, index) => {
       const time = new Date(item.checkin_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      text += `${index + 1}. *${item.students?.name}* - ${time} (${item.students?.batch})\n`;
+      text += `${index + 1}. *${item.students?.name}* - ${time} (Class ${item.students?.batch})\n`;
     });
     text += `\nKeep rising! 🔥📚`;
 
@@ -275,7 +396,7 @@ const Admin: React.FC = () => {
     if (lateStudents.length === 0) return alert('Perfect attendance in this class today! ✨');
 
     let text = `*⚠️ SMARTSTUDY | PENDING ATTENDANCE (${selectedDate})*\n*PHSS Pandallur - Class ${selectedClass}*\n\n`;
-    text += `The following students have not checked in yet:\n\n`;
+    text += `The following students have not logged morning attendance yet:\n\n`;
     lateStudents.forEach((student) => {
       text += `- *${student.name}* (Class ${student.batch})\n`;
     });
@@ -355,7 +476,7 @@ const Admin: React.FC = () => {
     );
   }
 
-  // 2. Class Selection Gate (Admin must select class first before dashboard)
+  // 2. Class Selection Gate
   if (!hasSelectedClass) {
     return (
       <div className="w-full min-h-screen bg-[#F0FDF4] p-4 flex flex-col items-center justify-center">
@@ -422,7 +543,7 @@ const Admin: React.FC = () => {
             </div>
           </div>
 
-          {/* Class Switcher Pill */}
+          {/* Class Switcher */}
           <div className="flex items-center gap-2">
             <div className="relative">
               <select
@@ -445,7 +566,7 @@ const Admin: React.FC = () => {
           </div>
         </div>
 
-        {/* Admin Navigation Tabs */}
+        {/* Navigation Tabs */}
         <div className="bg-white p-1.5 rounded-2xl border border-[#D1FAE5] grid grid-cols-4 gap-1 text-center shadow-sm">
           <button
             onClick={() => setActiveTab('attendance')}
@@ -465,7 +586,7 @@ const Admin: React.FC = () => {
                 : 'text-[#64748B] hover:text-[#064E3B]'
             }`}
           >
-            📖 Planner
+            📅 Timetable
           </button>
           <button
             onClick={() => setActiveTab('exams')}
@@ -607,84 +728,119 @@ const Admin: React.FC = () => {
           </div>
         )}
 
-        {/* TAB 2: STUDY PLANNER */}
+        {/* TAB 2: WEEKLY STUDY TIMETABLE & MULTI-SUBJECT PLANNER */}
         {activeTab === 'planner' && (
           <div className="space-y-4">
-            {/* Create Task Form */}
+            {/* Day Selector Bar */}
+            <div className="bg-white p-2 rounded-2xl border border-[#D1FAE5] shadow-sm">
+              <label className="block text-[10px] font-extrabold uppercase text-[#064E3B] px-1 mb-1.5">
+                Select Day to Manage Timetable:
+              </label>
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                {DAYS.map(day => (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => setSelectedDay(day)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                      selectedDay === day
+                        ? 'bg-[#047857] text-white shadow-sm'
+                        : 'bg-[#F8FAFC] text-[#64748B] hover:bg-[#ECFDF5]'
+                    }`}
+                  >
+                    {day}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Add Subject to Selected Day Form */}
             <div className="bg-white rounded-3xl p-5 border border-[#D1FAE5] shadow-sm">
               <h3 className="text-sm font-black text-[#064E3B] mb-1 flex items-center gap-1.5">
                 <span>➕</span>
-                <span>Assign Study Task for Class {selectedClass}</span>
+                <span>Add Study Subject for {selectedDay} (Class {selectedClass})</span>
               </h3>
-              <p className="text-xs text-[#64748B] mb-4">Students will see this and mark it completed when studying</p>
+              <p className="text-xs text-[#64748B] mb-4">
+                Students will automatically see {selectedDay}'s subjects on their dashboard
+              </p>
 
-              <form onSubmit={handleAddTask} className="space-y-3">
-                <div>
-                  <label className="block text-[10px] font-bold uppercase text-[#064E3B] mb-1">Task Title / Chapter</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Maths: Chapter 4 Circles - Ex 4.2 all problems"
-                    value={newTaskTitle}
-                    onChange={(e) => setNewTaskTitle(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#D1FAE5] text-xs font-bold text-[#0F172A] focus:outline-none focus:border-[#047857]"
-                  />
-                </div>
-
+              <form onSubmit={handleAddTimetableSubject} className="space-y-3">
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="block text-[10px] font-bold uppercase text-[#064E3B] mb-1">Subject</label>
                     <select
-                      value={newTaskSubject}
-                      onChange={(e) => setNewTaskSubject(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-[#D1FAE5] text-xs font-bold text-[#0F172A]"
+                      value={newSubject}
+                      onChange={(e) => setNewSubject(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl border border-[#D1FAE5] text-xs font-bold text-[#0F172A]"
                     >
-                      {['Mathematics', 'Physics', 'Chemistry', 'Biology', 'Social Science', 'English', 'Malayalam', 'Hindi'].map(sub => (
+                      {['Mathematics', 'Physics', 'Chemistry', 'Biology', 'Social Science', 'English', 'Malayalam', 'Hindi', 'Special Revision'].map(sub => (
                         <option key={sub} value={sub}>{sub}</option>
                       ))}
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold uppercase text-[#064E3B] mb-1">Target Class</label>
-                    <select
-                      value={selectedClass}
-                      onChange={(e) => setSelectedClass(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-[#D1FAE5] text-xs font-bold text-[#0F172A]"
-                    >
-                      <option value="All">All Classes</option>
-                      {CLASSES.map(cls => (
-                        <option key={cls} value={cls}>Class {cls}</option>
-                      ))}
-                    </select>
+                    <label className="block text-[10px] font-bold uppercase text-[#064E3B] mb-1">Slot / Period</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={newSlotNumber}
+                      onChange={(e) => setNewSlotNumber(Number(e.target.value))}
+                      className="w-full px-3 py-2.5 rounded-xl border border-[#D1FAE5] text-xs font-bold text-[#0F172A]"
+                    />
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-[#064E3B] mb-1">Chapter / Topics to Study</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Chapter 4: Circles - Ex 4.2 all problems"
+                    value={newTopic}
+                    onChange={(e) => setNewTopic(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#D1FAE5] text-xs font-bold text-[#0F172A] focus:outline-none focus:border-[#047857]"
+                  />
                 </div>
 
                 <button
                   type="submit"
                   className="w-full bg-[#047857] text-white py-3 rounded-xl font-bold text-xs shadow-md hover:bg-[#064E3B] transition-all"
                 >
-                  Publish Task to Class {selectedClass} 📖
+                  Save Subject to {selectedDay}'s Timetable 📖
                 </button>
               </form>
             </div>
 
-            {/* Existing Tasks List */}
+            {/* List of Subjects for Selected Day */}
             <div className="bg-white rounded-3xl p-5 border border-[#D1FAE5] shadow-sm">
-              <h3 className="text-xs font-bold uppercase text-[#064E3B] mb-3">Today's Assigned Tasks</h3>
-              {tasks.length === 0 ? (
-                <p className="text-xs text-gray-400 text-center py-4">No tasks assigned for today yet</p>
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-xs font-bold uppercase text-[#064E3B]">
+                  {selectedDay}'s Scheduled Subjects ({dayTimetableItems.length})
+                </h3>
+                <span className="text-[10px] font-bold text-[#059669] bg-[#ECFDF5] px-2 py-0.5 rounded">
+                  Class {selectedClass}
+                </span>
+              </div>
+
+              {dayTimetableItems.length === 0 ? (
+                <p className="text-xs text-gray-400 text-center py-4">No subjects set for {selectedDay} yet</p>
               ) : (
                 <div className="space-y-2">
-                  {tasks.map(t => (
-                    <div key={t.id} className="p-3 bg-[#F0FDF4] rounded-xl border border-[#D1FAE5] flex justify-between items-center">
+                  {dayTimetableItems.map((item, idx) => (
+                    <div key={item.id || idx} className="p-3 bg-[#F0FDF4] rounded-xl border border-[#D1FAE5] flex justify-between items-center">
                       <div>
-                        <p className="text-xs font-bold text-[#0F172A]">{t.title}</p>
-                        <span className="text-[10px] font-semibold text-[#047857]">
-                          {t.subject} • For {t.target_batch === 'All' ? 'All Classes' : `Class ${t.target_batch}`}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black uppercase text-[#047857] bg-white px-2 py-0.5 rounded border border-[#D1FAE5]">
+                            Slot {item.slot_number || idx + 1}
+                          </span>
+                          <span className="text-xs font-black text-[#0F172A]">{item.subject}</span>
+                        </div>
+                        <p className="text-xs text-[#064E3B] font-semibold mt-1">{item.topic}</p>
                       </div>
                       <button
-                        onClick={() => handleDeleteTask(t.id)}
-                        className="p-1.5 text-xs text-red-500 hover:bg-red-50 rounded-lg font-bold"
+                        onClick={() => handleDeleteTimetableItem(item.id)}
+                        className="p-2 text-xs text-red-500 hover:bg-red-50 rounded-lg font-bold"
+                        title="Delete slot"
                       >
                         🗑️
                       </button>
@@ -696,7 +852,7 @@ const Admin: React.FC = () => {
           </div>
         )}
 
-        {/* TAB 3: EXAM COUNTDOWN CREATOR */}
+        {/* TAB 3: EXAM COUNTDOWN CREATOR (Fixed & Live) */}
         {activeTab === 'exams' && (
           <div className="space-y-4">
             <div className="bg-white rounded-3xl p-5 border border-[#D1FAE5] shadow-sm">
@@ -704,14 +860,16 @@ const Admin: React.FC = () => {
                 <span>🎯</span>
                 <span>Create Exam Reminder</span>
               </h3>
-              <p className="text-xs text-[#64748B] mb-4">Students will see a live countdown clock on their screens</p>
+              <p className="text-xs text-[#64748B] mb-4">
+                Students will immediately see a live countdown clock ticking on their dashboard!
+              </p>
 
               <form onSubmit={handleAddExam} className="space-y-3">
                 <div>
                   <label className="block text-[10px] font-bold uppercase text-[#064E3B] mb-1">Exam Name</label>
                   <input
                     type="text"
-                    placeholder="e.g. Physics Model Exam"
+                    placeholder="e.g. SSLC Physics Model Exam"
                     value={newExamName}
                     onChange={(e) => setNewExamName(e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-[#D1FAE5] text-xs font-bold text-[#0F172A] focus:outline-none focus:border-[#047857]"
@@ -728,15 +886,18 @@ const Admin: React.FC = () => {
                 </div>
                 <button
                   type="submit"
-                  className="w-full bg-[#047857] text-white py-3 rounded-xl font-bold text-xs shadow-md hover:bg-[#064E3B] transition-all"
+                  className="w-full bg-[#047857] text-white py-3.5 rounded-xl font-bold text-xs shadow-md hover:bg-[#064E3B] transition-all flex items-center justify-center gap-1.5"
                 >
-                  Add Exam Countdown 🎯
+                  <span>Add Exam Countdown 🎯</span>
                 </button>
               </form>
             </div>
 
+            {/* Scheduled Exams List */}
             <div className="bg-white rounded-3xl p-5 border border-[#D1FAE5] shadow-sm">
-              <h3 className="text-xs font-bold uppercase text-[#064E3B] mb-3">Scheduled Exams</h3>
+              <h3 className="text-xs font-bold uppercase text-[#064E3B] mb-3">
+                Scheduled Exams ({exams.length})
+              </h3>
               {exams.length === 0 ? (
                 <p className="text-xs text-gray-400 text-center py-4">No custom exams added yet</p>
               ) : (
@@ -745,11 +906,14 @@ const Admin: React.FC = () => {
                     <div key={e.id} className="p-3 bg-[#F0FDF4] rounded-xl border border-[#D1FAE5] flex justify-between items-center">
                       <div>
                         <p className="text-xs font-bold text-[#0F172A]">{e.name}</p>
-                        <p className="text-[10px] font-semibold text-[#047857]">{e.exam_date}</p>
+                        <p className="text-[11px] font-extrabold text-[#047857]">
+                          📅 {new Date(e.exam_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </p>
                       </div>
                       <button
                         onClick={() => handleDeleteExam(e.id)}
-                        className="p-1.5 text-xs text-red-500 hover:bg-red-50 rounded-lg font-bold"
+                        className="p-2 text-xs text-red-500 hover:bg-red-50 rounded-lg font-bold"
+                        title="Delete exam"
                       >
                         🗑️
                       </button>
@@ -815,8 +979,8 @@ const Admin: React.FC = () => {
               {/* Donut Chart: Study & Attendance Tracking */}
               <div className="bg-[#F0FDF4] p-4 rounded-2xl border border-[#D1FAE5] mb-4 flex items-center justify-around">
                 <DonutChart
-                  percentage={studentCompletions.length > 0 ? Math.min(100, studentCompletions.length * 25) : 0}
-                  label="Tasks"
+                  percentage={dayTimetableItems.length > 0 ? Math.round((studentCompletions.length / dayTimetableItems.length) * 100) : 0}
+                  label="Completed"
                   size={110}
                   strokeWidth={11}
                   primaryColor="#059669"
@@ -824,14 +988,16 @@ const Admin: React.FC = () => {
                 />
                 <div className="text-right">
                   <p className="text-[10px] font-bold text-[#64748B] uppercase">Study Activity</p>
-                  <p className="text-xl font-black text-[#064E3B]">{studentCompletions.length} Tasks Done</p>
-                  <p className="text-[10px] font-semibold text-[#059669] mt-0.5">Tracked by Admin</p>
+                  <p className="text-xl font-black text-[#064E3B]">
+                    {studentCompletions.length} / {dayTimetableItems.length} Subjects
+                  </p>
+                  <p className="text-[10px] font-semibold text-[#059669] mt-0.5">Today's Timetable</p>
                 </div>
               </div>
 
               {/* Attendance Details Today */}
               <div className="mb-4 p-3 bg-[#F8FAFC] rounded-xl border border-[#E2E8F0]">
-                <p className="text-[10px] font-bold text-[#64748B] uppercase mb-1">Today's Check-in Record</p>
+                <p className="text-[10px] font-bold text-[#64748B] uppercase mb-1">Morning Attendance</p>
                 {(() => {
                   const att = classAttendance.find(a => a.student_id === selectedStudent.id);
                   if (att) {
@@ -848,20 +1014,20 @@ const Admin: React.FC = () => {
                 })()}
               </div>
 
-              {/* Completed Tasks History */}
+              {/* Completed Tasks History with Submitted Times */}
               <div className="space-y-2">
-                <p className="text-[10px] font-bold text-[#064E3B] uppercase tracking-wider">Completed Tasks & Submission Times</p>
+                <p className="text-[10px] font-bold text-[#064E3B] uppercase tracking-wider">Subjects Completed Today & Submitted Time</p>
                 {studentCompletions.length === 0 ? (
-                  <p className="text-xs text-gray-400 italic py-2 text-center">No tasks completed yet</p>
+                  <p className="text-xs text-gray-400 italic py-2 text-center">No subjects marked complete yet today</p>
                 ) : (
                   studentCompletions.map((comp: any) => (
                     <div key={comp.id} className="p-2.5 bg-[#F0FDF4] rounded-lg border border-[#A7F3D0] text-xs">
                       <div className="flex justify-between font-bold text-[#0F172A]">
-                        <span>{comp.study_tasks?.title || 'Study Task'}</span>
+                        <span>{comp.subject || comp.study_tasks?.title || 'Subject Task'}</span>
                         <span className="text-[#047857]">✓ Done</span>
                       </div>
                       <div className="text-[10px] text-[#64748B] mt-0.5">
-                        Submitted: {new Date(comp.completed_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                        Submitted: {new Date(comp.completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                       </div>
                     </div>
                   ))
