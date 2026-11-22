@@ -1,17 +1,13 @@
 -- ========================================================
 -- SMARTSTUDY - PHSS PANDALLUR
--- COMPLETE DATABASE INITIALIZATION SCRIPT
+-- COMPLETE DATABASE INITIALIZATION SCRIPT (V2)
 -- ========================================================
 -- INSTRUCTIONS FOR SETUP:
--- 1. Create a free project on Supabase (https://supabase.com).
--- 2. Once your project is created, click on "SQL Editor" on the left menu.
+-- 1. Open your Supabase Dashboard: https://supabase.com
+-- 2. Click on "SQL Editor" on the left menu.
 -- 3. Click "New Query".
 -- 4. Paste this entire script into the editor.
 -- 5. Click "Run" (or Ctrl + Enter).
--- 6. Go to "Project Settings" -> "API", copy:
---    - Project URL
---    - Project API anon key (public)
---    and paste them into SmartStudy's .env.local file!
 -- ========================================================
 
 -- 1. Create Students Table
@@ -43,12 +39,51 @@ CREATE TABLE IF NOT EXISTS student_stats (
   medal_level TEXT DEFAULT 'None'
 );
 
--- 4. Enable Row Level Security (RLS)
+-- 4. Create Announcements / Custom Messages Table
+CREATE TABLE IF NOT EXISTS announcements (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  message TEXT NOT NULL,
+  created_by TEXT DEFAULT 'Admin',
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- 5. Create Exams Countdown Table
+CREATE TABLE IF NOT EXISTS exams (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  name TEXT NOT NULL,
+  exam_date DATE NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- 6. Create Study Tasks / Planner Table
+CREATE TABLE IF NOT EXISTS study_tasks (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  title TEXT NOT NULL,
+  subject TEXT DEFAULT 'General',
+  target_batch TEXT DEFAULT 'All',
+  assigned_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- 7. Create Task Completions Table
+CREATE TABLE IF NOT EXISTS task_completions (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  task_id uuid REFERENCES study_tasks(id) ON DELETE CASCADE,
+  student_id uuid REFERENCES students(id) ON DELETE CASCADE,
+  completed_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(task_id, student_id)
+);
+
+-- 8. Enable Row Level Security (RLS)
 ALTER TABLE students ENABLE ROW LEVEL SECURITY;
 ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
 ALTER TABLE student_stats ENABLE ROW LEVEL SECURITY;
+ALTER TABLE announcements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE exams ENABLE ROW LEVEL SECURITY;
+ALTER TABLE study_tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE task_completions ENABLE ROW LEVEL SECURITY;
 
--- 5. Drop existing policies if re-running script
+-- 9. Drop existing policies if re-running
 DROP POLICY IF EXISTS "Public select students" ON students;
 DROP POLICY IF EXISTS "Public insert students" ON students;
 DROP POLICY IF EXISTS "Public update students" ON students;
@@ -63,6 +98,26 @@ DROP POLICY IF EXISTS "Public select student_stats" ON student_stats;
 DROP POLICY IF EXISTS "Public insert student_stats" ON student_stats;
 DROP POLICY IF EXISTS "Public update student_stats" ON student_stats;
 DROP POLICY IF EXISTS "Public delete student_stats" ON student_stats;
+
+DROP POLICY IF EXISTS "Public select announcements" ON announcements;
+DROP POLICY IF EXISTS "Public insert announcements" ON announcements;
+DROP POLICY IF EXISTS "Public update announcements" ON announcements;
+DROP POLICY IF EXISTS "Public delete announcements" ON announcements;
+
+DROP POLICY IF EXISTS "Public select exams" ON exams;
+DROP POLICY IF EXISTS "Public insert exams" ON exams;
+DROP POLICY IF EXISTS "Public update exams" ON exams;
+DROP POLICY IF EXISTS "Public delete exams" ON exams;
+
+DROP POLICY IF EXISTS "Public select study_tasks" ON study_tasks;
+DROP POLICY IF EXISTS "Public insert study_tasks" ON study_tasks;
+DROP POLICY IF EXISTS "Public update study_tasks" ON study_tasks;
+DROP POLICY IF EXISTS "Public delete study_tasks" ON study_tasks;
+
+DROP POLICY IF EXISTS "Public select task_completions" ON task_completions;
+DROP POLICY IF EXISTS "Public insert task_completions" ON task_completions;
+DROP POLICY IF EXISTS "Public update task_completions" ON task_completions;
+DROP POLICY IF EXISTS "Public delete task_completions" ON task_completions;
 
 -- Create Public Access Policies
 CREATE POLICY "Public select students" ON students FOR SELECT USING (true);
@@ -80,16 +135,37 @@ CREATE POLICY "Public insert student_stats" ON student_stats FOR INSERT WITH CHE
 CREATE POLICY "Public update student_stats" ON student_stats FOR UPDATE USING (true);
 CREATE POLICY "Public delete student_stats" ON student_stats FOR DELETE USING (true);
 
--- 6. Performance Indices
+CREATE POLICY "Public select announcements" ON announcements FOR SELECT USING (true);
+CREATE POLICY "Public insert announcements" ON announcements FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public update announcements" ON announcements FOR UPDATE USING (true);
+CREATE POLICY "Public delete announcements" ON announcements FOR DELETE USING (true);
+
+CREATE POLICY "Public select exams" ON exams FOR SELECT USING (true);
+CREATE POLICY "Public insert exams" ON exams FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public update exams" ON exams FOR UPDATE USING (true);
+CREATE POLICY "Public delete exams" ON exams FOR DELETE USING (true);
+
+CREATE POLICY "Public select study_tasks" ON study_tasks FOR SELECT USING (true);
+CREATE POLICY "Public insert study_tasks" ON study_tasks FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public update study_tasks" ON study_tasks FOR UPDATE USING (true);
+CREATE POLICY "Public delete study_tasks" ON study_tasks FOR DELETE USING (true);
+
+CREATE POLICY "Public select task_completions" ON task_completions FOR SELECT USING (true);
+CREATE POLICY "Public insert task_completions" ON task_completions FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public update task_completions" ON task_completions FOR UPDATE USING (true);
+CREATE POLICY "Public delete task_completions" ON task_completions FOR DELETE USING (true);
+
+-- 10. Performance Indexes
 CREATE INDEX IF NOT EXISTS idx_attendance_date_rank ON attendance(date, rank_today);
 CREATE INDEX IF NOT EXISTS idx_stats_total_points ON student_stats(total_points DESC);
 CREATE INDEX IF NOT EXISTS idx_attendance_student_date ON attendance(student_id, date);
+CREATE INDEX IF NOT EXISTS idx_study_tasks_date ON study_tasks(assigned_date);
+CREATE INDEX IF NOT EXISTS idx_task_completions_student ON task_completions(student_id);
 
--- 7. Automatic Daily Ranking Trigger
+-- 11. Automatic Daily Ranking Trigger
 CREATE OR REPLACE FUNCTION update_daily_ranks()
 RETURNS TRIGGER AS $$
 BEGIN
-  -- Update all ranks for the given date, ordered by checkin_time
   WITH ranked AS (
     SELECT 
       id,
@@ -106,17 +182,20 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Drop trigger if already exists
 DROP TRIGGER IF EXISTS trigger_update_ranks ON attendance;
 
--- Create trigger on attendance insert
 CREATE TRIGGER trigger_update_ranks
 AFTER INSERT ON attendance
 FOR EACH ROW
 EXECUTE FUNCTION update_daily_ranks();
 
--- Success Notice
+-- 12. Optional Initial Announcement
+INSERT INTO announcements (message)
+VALUES ('Welcome to SmartStudy! Early mornings lead to great success. 🌅')
+ON CONFLICT DO NOTHING;
+
+-- Done
 DO $$
 BEGIN
-  RAISE NOTICE '✅ SmartStudy database for PHSS Pandallur initialized successfully!';
+  RAISE NOTICE '✅ SmartStudy V2 database for PHSS Pandallur initialized successfully!';
 END $$;

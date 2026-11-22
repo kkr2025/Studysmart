@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import Setup from './pages/Setup.tsx';
@@ -24,18 +23,33 @@ const App: React.FC = () => {
     if (noNavRoutes.includes(location.pathname)) return null;
 
     return (
-      <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t border-gray-200 px-4 py-3 flex justify-around items-center z-50 shadow-lg max-w-[1280px] mx-auto">
-        <Link to="/" className={`flex flex-col items-center transition-all ${location.pathname === '/' ? 'text-[#2563EB] scale-110' : 'text-gray-400 hover:text-[#2563EB]'}`}>
+      <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-[#D1FAE5] px-6 py-2.5 flex justify-around items-center z-50 shadow-lg max-w-md mx-auto">
+        <Link
+          to="/"
+          className={`flex flex-col items-center transition-all ${
+            location.pathname === '/' ? 'text-[#047857] scale-105 font-black' : 'text-[#94A3B8] hover:text-[#047857]'
+          }`}
+        >
           <span className="text-xl">☀️</span>
-          <span className="text-[10px] font-bold uppercase mt-0.5 tracking-tighter">Presence</span>
+          <span className="text-[10px] uppercase mt-0.5 tracking-tight font-extrabold">Study</span>
         </Link>
-        <Link to="/leaderboard" className={`flex flex-col items-center transition-all ${location.pathname === '/leaderboard' ? 'text-[#22C55E] scale-110' : 'text-gray-400 hover:text-[#22C55E]'}`}>
+        <Link
+          to="/leaderboard"
+          className={`flex flex-col items-center transition-all ${
+            location.pathname === '/leaderboard' ? 'text-[#047857] scale-105 font-black' : 'text-[#94A3B8] hover:text-[#047857]'
+          }`}
+        >
           <span className="text-xl">🏆</span>
-          <span className="text-[10px] font-bold uppercase mt-0.5 tracking-tighter">Ranks</span>
+          <span className="text-[10px] uppercase mt-0.5 tracking-tight font-extrabold">Ranks</span>
         </Link>
-        <Link to="/admin" className={`flex flex-col items-center transition-all ${location.pathname === '/admin' ? 'text-[#2563EB] scale-110' : 'text-gray-400 hover:text-[#2563EB]'}`}>
+        <Link
+          to="/admin"
+          className={`flex flex-col items-center transition-all ${
+            location.pathname === '/admin' ? 'text-[#047857] scale-105 font-black' : 'text-[#94A3B8] hover:text-[#047857]'
+          }`}
+        >
           <span className="text-xl">🛡️</span>
-          <span className="text-[10px] font-bold uppercase mt-0.5 tracking-tighter">Admin</span>
+          <span className="text-[10px] uppercase mt-0.5 tracking-tight font-extrabold">Admin</span>
         </Link>
       </nav>
     );
@@ -45,22 +59,23 @@ const App: React.FC = () => {
     const location = useLocation();
     if (location.pathname === '/setup') return null;
     return (
-      <footer className="mt-auto py-8 text-center border-t border-gray-100 px-6">
-        <p className="text-[10px] font-black text-[#22C55E] uppercase tracking-[0.2em]">
+      <footer className="mt-auto py-6 text-center border-t border-[#D1FAE5] px-4 max-w-md mx-auto w-full">
+        <p className="text-[10px] font-black text-[#047857] uppercase tracking-[0.2em]">
           SmartStudy &copy; 2026
         </p>
-        <p className="text-[9px] font-medium text-gray-400 mt-1 uppercase tracking-widest leading-relaxed">
+        <p className="text-[9px] font-semibold text-[#64748B] mt-0.5 uppercase tracking-widest">
           PHSS Pandallur
         </p>
       </footer>
     );
-  }
+  };
 
   return (
     <Router>
-      <div className="min-h-screen bg-[#F8FAFC] flex flex-col">
-        <div className="mx-auto w-full max-w-[1280px] min-h-screen bg-white shadow-lg overflow-x-hidden flex flex-col relative">
-          <main className="flex-1 pb-24 relative">
+      <div className="min-h-screen bg-[#E6F7ED] flex flex-col justify-center items-center">
+        {/* Mobile-first centered frame */}
+        <div className="w-full max-w-md min-h-screen bg-[#F0FDF4] shadow-2xl shadow-emerald-950/10 overflow-x-hidden flex flex-col relative">
+          <main className="flex-1 pb-20 relative">
             <Routes>
               <Route
                 path="/setup"

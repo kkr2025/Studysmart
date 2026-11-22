@@ -3,110 +3,138 @@ import { supabase } from '../supabaseClient.ts';
 import { LeaderboardEntry } from '../types.ts';
 import { getFormattedDate } from '../logic/utils.ts';
 
+const CLASSES = ['All', '10A', '10B', '10C', '10D', '10E', '10F', '10G', '10H', '10I', '10J', '10K', '10L', '10M', '10N'];
+
 const Leaderboard: React.FC = () => {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
+  const [selectedClass, setSelectedClass] = useState('All');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchLeaderboard = async () => {
-      try {
-        const today = getFormattedDate();
-        const { data, error } = await supabase
-          .from('attendance')
-          .select('*, students(name, batch)')
-          .eq('date', today)
-          .order('rank_today', { ascending: true })
-          .limit(10);
-
-        if (error) throw error;
-        setEntries(data || []);
-      } catch (err: any) {
-        console.error('Error fetching leaderboard:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchLeaderboard();
   }, []);
 
+  const fetchLeaderboard = async () => {
+    try {
+      setLoading(true);
+      const today = getFormattedDate();
+      const { data, error } = await supabase
+        .from('attendance')
+        .select('*, students(name, batch)')
+        .eq('date', today)
+        .order('rank_today', { ascending: true })
+        .limit(50);
+
+      if (error) throw error;
+      setEntries(data || []);
+    } catch (err: any) {
+      console.error('Error fetching leaderboard:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredEntries = selectedClass === 'All'
+    ? entries
+    : entries.filter(e => e.students?.batch === selectedClass);
+
   return (
-    <div className="w-full min-h-screen bg-[#F8FAFC] px-4 sm:px-6 lg:px-8 pt-6 pb-24">
-      <div className="max-w-[900px] mx-auto">
+    <div className="w-full min-h-screen bg-[#F0FDF4] px-4 pt-4 pb-24">
+      <div className="w-full max-w-md mx-auto space-y-4">
         {/* Header */}
-        <div className="mb-8 text-center fade-in">
-          <h1 className="text-4xl sm:text-5xl font-black bg-gradient-to-r from-[#2563EB] to-[#06B6D4] bg-clip-text text-transparent mb-3">
-            Today's Top Performers 🏆
-          </h1>
-          <span className="inline-block badge badge-primary text-xs px-4 py-2">
-            Top 10 Early Birds
-          </span>
+        <div className="text-center pt-2 pb-1">
+          <div className="inline-block p-3 bg-gradient-to-br from-[#064E3B] to-[#059669] rounded-2xl shadow-md text-white text-2xl mb-2">
+            🏆
+          </div>
+          <h1 className="text-2xl font-black text-[#064E3B] tracking-tight">Today's Early Birds</h1>
+          <p className="text-xs font-semibold text-[#059669] mt-0.5">Top Morning Achievers • PHSS Pandallur</p>
         </div>
 
-        {loading ? (
-          <div className="flex justify-center py-20">
-            <div className="w-12 h-12 border-4 border-[#2563EB] border-t-transparent rounded-full animate-spin"></div>
+        {/* Class Filter Bar */}
+        <div className="bg-white p-2 rounded-2xl border border-[#D1FAE5] shadow-sm">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+            {CLASSES.map((cls) => (
+              <button
+                key={cls}
+                onClick={() => setSelectedClass(cls)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                  selectedClass === cls
+                    ? 'bg-[#047857] text-white shadow-sm'
+                    : 'bg-[#F8FAFC] text-[#64748B] hover:bg-[#ECFDF5]'
+                }`}
+              >
+                {cls === 'All' ? 'All Classes' : `Class ${cls}`}
+              </button>
+            ))}
           </div>
-        ) : entries.length === 0 ? (
-          <div className="premium-card text-center py-16 slide-up">
-            <div className="text-7xl mb-4 opacity-30">�</div>
-            <p className="text-sm font-bold text-[#64748B] uppercase tracking-wide">No Attendance Yet</p>
-            <p className="text-sm text-[#94A3B8] mt-2">Be the first to rise tomorrow!</p>
+        </div>
+
+        {/* Entries List */}
+        {loading ? (
+          <div className="flex justify-center py-16">
+            <div className="w-10 h-10 border-4 border-[#047857] border-t-transparent rounded-full animate-spin"></div>
+          </div>
+        ) : filteredEntries.length === 0 ? (
+          <div className="bg-white rounded-3xl p-10 text-center border border-[#D1FAE5] shadow-sm">
+            <div className="text-5xl mb-3">🌅</div>
+            <p className="text-sm font-bold text-[#064E3B]">No Check-Ins Yet Today</p>
+            <p className="text-xs text-[#64748B] mt-1">
+              {selectedClass === 'All'
+                ? 'Be the first student to log attendance at 3:00 AM!'
+                : `No check-ins yet for Class ${selectedClass}`}
+            </p>
           </div>
         ) : (
-          <div className="space-y-3 slide-up">
-            {entries.map((entry, index) => {
+          <div className="space-y-2.5">
+            {filteredEntries.map((entry, index) => {
               const isTop3 = index < 3;
-              const rankColors = [
-                { bg: 'bg-gradient-to-r from-amber-50 to-yellow-50', border: 'border-amber-300', text: 'text-amber-700', medal: '🥇' },
-                { bg: 'bg-gradient-to-r from-gray-50 to-slate-50', border: 'border-gray-300', text: 'text-gray-700', medal: '🥈' },
-                { bg: 'bg-gradient-to-r from-orange-50 to-amber-50', border: 'border-orange-300', text: 'text-orange-700', medal: '🥉' }
-              ];
-              const rankStyle = isTop3 ? rankColors[index] : { bg: 'bg-white', border: 'border-gray-200', text: 'text-gray-600', medal: null };
+              const medals = ['🥇', '🥈', '🥉'];
 
               return (
                 <div
                   key={entry.id}
-                  className={`premium-card clickable flex items-center gap-4 ${rankStyle.bg} border-2 ${rankStyle.border}`}
-                  style={{ animationDelay: `${index * 50}ms` }}
+                  className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between shadow-sm ${
+                    isTop3
+                      ? 'bg-white border-[#10B981] shadow-emerald-950/5'
+                      : 'bg-white border-[#E2E8F0]'
+                  }`}
                 >
-                  {/* Rank Badge */}
-                  <div className="flex-shrink-0 w-16 text-center">
-                    {rankStyle.medal ? (
-                      <span className="text-4xl">{rankStyle.medal}</span>
-                    ) : (
-                      <span className={`text-2xl font-black ${rankStyle.text}`}>#{entry.rank_today}</span>
-                    )}
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 text-center flex-shrink-0">
+                      {isTop3 ? (
+                        <span className="text-3xl">{medals[index]}</span>
+                      ) : (
+                        <span className="text-base font-black text-[#64748B]">#{entry.rank_today}</span>
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-black text-sm text-[#0F172A] truncate max-w-[170px]">
+                        {entry.students?.name}
+                      </p>
+                      <span className="inline-block mt-0.5 text-[10px] font-bold text-[#047857] bg-[#ECFDF5] px-2 py-0.5 rounded-md border border-[#A7F3D0]">
+                        Class {entry.students?.batch}
+                      </span>
+                    </div>
                   </div>
 
-                  {/* Student Info */}
-                  <div className="flex-1 min-w-0">
-                    <p className={`font-bold text-lg ${rankStyle.text} truncate`}>{entry.students.name}</p>
-                    <span className="badge badge-success text-xs mt-1">{entry.students.batch}</span>
-                  </div>
-
-                  {/* Time & Points */}
                   <div className="text-right flex-shrink-0">
-                    <p className={`text-lg font-black ${rankStyle.text} tabular-nums`}>
+                    <p className="text-sm font-black text-[#064E3B] tabular-nums">
                       {new Date(entry.checkin_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </p>
-                    <p className="text-xs text-[#22C55E] font-bold mt-0.5">+{entry.points} pts</p>
+                    <p className="text-[10px] font-bold text-[#10B981]">+{entry.points} pts</p>
                   </div>
                 </div>
               );
-            })}</div>
+            })}
+          </div>
         )}
 
-        {/* Motivational Footer */}
-        <div className="mt-12 premium-card slide-up" style={{ background: 'linear-gradient(135deg, #ECFCCB 0%, #DCFCE7 100%)', border: 'none', padding: '1.5rem' }}>
-          <div className="text-center">
-            <p className="text-xs font-bold text-[#16A34A] uppercase tracking-wider mb-2">
-              Want to see your name here?
-            </p>
-            <p className="text-sm font-semibold text-[#0F172A] italic">
-              "The morning breeze has secrets to tell you. Don't go back to sleep."
-            </p>
-          </div>
+        {/* Motivational Banner */}
+        <div className="bg-[#ECFDF5] rounded-2xl p-4 text-center border border-[#A7F3D0]">
+          <p className="text-xs font-bold text-[#047857]">Rise and Shine! 🌅</p>
+          <p className="text-[11px] text-[#064E3B] mt-0.5 italic">
+            "The secret of getting ahead is getting started."
+          </p>
         </div>
       </div>
     </div>

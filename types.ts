@@ -1,4 +1,3 @@
-
 export interface Student {
   id: string;
   name: string;
@@ -29,4 +28,34 @@ export interface LeaderboardEntry extends Attendance {
     name: string;
     batch: string;
   };
+}
+
+export interface Announcement {
+  id: string;
+  message: string;
+  created_by?: string;
+  created_at: string;
+}
+
+export interface Exam {
+  id: string;
+  name: string;
+  exam_date: string;
+  created_at?: string;
+}
+
+export interface StudyTask {
+  id: string;
+  title: string;
+  subject: string;
+  target_batch: string;
+  assigned_date: string;
+  created_at?: string;
+}
+
+export interface TaskCompletion {
+  id: string;
+  task_id: string;
+  student_id: string;
+  completed_at: string;
 }
