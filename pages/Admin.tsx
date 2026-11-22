@@ -47,7 +47,7 @@ const Admin: React.FC = () => {
   const [selectedClass, setSelectedClass] = useState('10A');
 
   // Navigation tab
-  const [activeTab, setActiveTab] = useState<'attendance' | 'planner' | 'exams' | 'announcement'>('attendance');
+  const [activeTab, setActiveTab] = useState<'attendance' | 'planner' | 'exams' | 'announcement' | 'data'>('attendance');
 
   // Core Data
   const [selectedDate, setSelectedDate] = useState(getFormattedDate());
@@ -74,6 +74,10 @@ const Admin: React.FC = () => {
   const [exams, setExams] = useState<Exam[]>([]);
   const [newExamName, setNewExamName] = useState('');
   const [newExamDate, setNewExamDate] = useState('');
+
+  // Data Reset State
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -444,6 +448,139 @@ const Admin: React.FC = () => {
     }
   };
 
+  // 1. Reset Today's Attendance (for selected class or all classes)
+  const handleResetTodayAttendance = async () => {
+    const scopeName = selectedClass === 'All' ? 'ALL classes' : `Class ${selectedClass}`;
+    if (!window.confirm(`⚠️ RESET TODAY'S ATTENDANCE (${selectedDate})\n\nAre you sure you want to delete today's attendance records for ${scopeName}?\n\nStudents will be marked absent and can re-check in.`)) {
+      return;
+    }
+
+    setResetting(true);
+    try {
+      if (selectedClass === 'All') {
+        const { error } = await supabase
+          .from('attendance')
+          .delete()
+          .eq('date', selectedDate);
+        if (error) throw error;
+      } else {
+        const studentIds = classStudents.map(s => s.id);
+        if (studentIds.length > 0) {
+          const { error } = await supabase
+            .from('attendance')
+            .delete()
+            .eq('date', selectedDate)
+            .in('student_id', studentIds);
+          if (error) throw error;
+        }
+      }
+
+      // Also remove today's study task completions for this class/day
+      try {
+        const studentIds = classStudents.map(s => s.id);
+        if (studentIds.length > 0) {
+          await supabase
+            .from('timetable_completions')
+            .delete()
+            .eq('completion_date', selectedDate)
+            .in('student_id', studentIds);
+        }
+      } catch (e) {}
+
+      alert(`✅ Attendance for ${selectedDate} (${scopeName}) has been reset successfully!`);
+      setShowResetModal(false);
+      fetchData();
+    } catch (err: any) {
+      console.error('Reset Today Error:', err);
+      alert('Failed to reset attendance: ' + err.message);
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  // 2. Reset All Attendance & Points (Keep Student Accounts)
+  const handleResetAllAttendance = async () => {
+    if (!window.confirm('⚠️ RESET ALL ATTENDANCE & LEADERBOARD SCORES\n\nAre you sure? This will:\n- Delete ALL attendance records across all dates\n- Reset all student points, streaks and ranks to 0\n- Delete all study task completion logs\n- KEEP all registered students in the system\n\nThis cannot be undone!')) {
+      return;
+    }
+
+    setResetting(true);
+    try {
+      // Delete attendance
+      const { error: attErr } = await supabase
+        .from('attendance')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+      if (attErr) throw attErr;
+
+      // Reset student stats
+      try {
+        await supabase
+          .from('student_stats')
+          .update({ total_points: 0, current_streak: 0, best_streak: 0, last_checkin_date: null, medal_level: 'None' })
+          .neq('student_id', '00000000-0000-0000-0000-000000000000');
+      } catch (e) {
+        await supabase.from('student_stats').delete().neq('student_id', '00000000-0000-0000-0000-000000000000');
+      }
+
+      // Delete task completions
+      try {
+        await supabase.from('timetable_completions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      } catch (e) {}
+
+      localStorage.removeItem('smartstudy_local_completions');
+
+      alert('✅ All attendance records and leaderboard stats have been reset to 0!');
+      setShowResetModal(false);
+      fetchData();
+    } catch (err: any) {
+      console.error('Reset All Attendance Error:', err);
+      alert('Failed to reset data: ' + err.message);
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  // 3. Factory Reset (Danger Zone)
+  const handleFactoryReset = async () => {
+    if (!window.confirm('🚨 DANGER ZONE - COMPLETE FACTORY RESET 🚨\n\nThis will permanently delete:\n- All registered students\n- All attendance history\n- All student stats & ranks\n- All study completions\n\nAre you absolutely sure?')) {
+      return;
+    }
+
+    const confirmText = window.prompt('To confirm, type "DELETE" below:');
+    if (confirmText !== 'DELETE') {
+      alert('Reset cancelled. You must type "DELETE" exactly.');
+      return;
+    }
+
+    setResetting(true);
+    try {
+      try {
+        await supabase.from('timetable_completions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      } catch (e) {}
+
+      const { error: attErr } = await supabase.from('attendance').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      if (attErr) console.warn('Attendance delete:', attErr);
+
+      const { error: statErr } = await supabase.from('student_stats').delete().neq('student_id', '00000000-0000-0000-0000-000000000000');
+      if (statErr) console.warn('Stats delete:', statErr);
+
+      const { error: stuErr } = await supabase.from('students').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      if (stuErr) throw stuErr;
+
+      localStorage.removeItem('smartstudy_local_completions');
+
+      alert('✅ All data has been successfully reset. Application will now refresh.');
+      setShowResetModal(false);
+      window.location.reload();
+    } catch (err: any) {
+      console.error('Factory Reset Error:', err);
+      alert('Failed to reset: ' + err.message);
+    } finally {
+      setResetting(false);
+    }
+  };
+
   // 1. Password Gate
   if (!isAuthenticated) {
     return (
@@ -526,6 +663,254 @@ const Admin: React.FC = () => {
     );
   }
 
+  // ─── BACKUP FUNCTIONS ────────────────────────────────────────────────────
+  // Full Backup: exports all data as a JSON file download
+  const handleFullBackup = async () => {
+    setResetting(true);
+    try {
+      const { data: students } = await supabase.from('students').select('*');
+      const { data: attendance } = await supabase.from('attendance').select('*');
+      const { data: stats } = await supabase.from('student_stats').select('*');
+      const { data: examsDb } = await supabase.from('exams').select('*');
+      const { data: timetable } = await supabase.from('weekly_timetable').select('*');
+      const { data: completions } = await supabase.from('timetable_completions').select('*');
+      const { data: announcements } = await supabase.from('announcements').select('*').order('created_at', { ascending: false }).limit(50);
+
+      const backup = {
+        backup_created_at: new Date().toISOString(),
+        school: 'PHSS Pandallur',
+        app: 'SmartStudy',
+        version: '2.0',
+        data: {
+          students: students || [],
+          attendance: attendance || [],
+          student_stats: stats || [],
+          exams: examsDb || [],
+          weekly_timetable: timetable || [],
+          timetable_completions: completions || [],
+          announcements: announcements || [],
+        },
+        summary: {
+          total_students: (students || []).length,
+          total_attendance_records: (attendance || []).length,
+          total_exams: (examsDb || []).length,
+        }
+      };
+
+      const json = JSON.stringify(backup, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const dateStr = new Date().toISOString().split('T')[0];
+      a.download = `SmartStudy_Backup_PHSS_${dateStr}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      alert(`✅ Backup downloaded!\n📁 SmartStudy_Backup_PHSS_${dateStr}.json\n\n📊 Summary:\n• ${(students || []).length} students\n• ${(attendance || []).length} attendance records\n• ${(examsDb || []).length} exams`);
+    } catch (err: any) {
+      console.error('Backup Error:', err);
+      alert('Backup failed: ' + err.message);
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  // CSV Backup: exports attendance as CSV spreadsheet
+  const handleCSVBackup = async () => {
+    setResetting(true);
+    try {
+      const { data: attData } = await supabase
+        .from('attendance')
+        .select(`
+          date,
+          checkin_time,
+          points,
+          rank_today,
+          students ( name, batch )
+        `)
+        .order('date', { ascending: false });
+
+      if (!attData || attData.length === 0) {
+        alert('No attendance data to export yet.');
+        setResetting(false);
+        return;
+      }
+
+      const headers = ['Date', 'Student Name', 'Class', 'Check-in Time', 'Rank', 'Points'];
+      const rows = attData.map((r: any) => [
+        r.date,
+        r.students?.name || 'Unknown',
+        r.students?.batch || '-',
+        r.checkin_time ? new Date(r.checkin_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-',
+        r.rank_today || '-',
+        r.points || 0,
+      ]);
+
+      const csv = [headers, ...rows].map(row => row.map(v => `"${v}"`).join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const dateStr = new Date().toISOString().split('T')[0];
+      a.download = `SmartStudy_Attendance_${dateStr}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      alert(`✅ CSV exported!\n📊 ${attData.length} attendance records downloaded as spreadsheet.`);
+    } catch (err: any) {
+      console.error('CSV Export Error:', err);
+      alert('CSV export failed: ' + err.message);
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  // Students CSV export
+  const handleStudentsCSVExport = async () => {
+    setResetting(true);
+    try {
+      const { data: studentsData } = await supabase
+        .from('students')
+        .select(`*, student_stats ( total_points, current_streak, best_streak, medal_level )`)
+        .order('batch', { ascending: true });
+
+      if (!studentsData || studentsData.length === 0) {
+        alert('No student data to export.');
+        setResetting(false);
+        return;
+      }
+
+      const headers = ['Name', 'Class', 'Total Points', 'Current Streak', 'Best Streak', 'Medal', 'Registered On'];
+      const rows = studentsData.map((s: any) => [
+        s.name,
+        s.batch,
+        s.student_stats?.total_points || 0,
+        s.student_stats?.current_streak || 0,
+        s.student_stats?.best_streak || 0,
+        s.student_stats?.medal_level || 'None',
+        s.created_at ? new Date(s.created_at).toLocaleDateString('en-GB') : '-',
+      ]);
+
+      const csv = [headers, ...rows].map(row => row.map(v => `"${v}"`).join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const dateStr = new Date().toISOString().split('T')[0];
+      a.download = `SmartStudy_Students_${dateStr}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      alert(`✅ Students list exported!\n👥 ${studentsData.length} students downloaded.`);
+    } catch (err: any) {
+      alert('Export failed: ' + err.message);
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  // ─── IMPORT / RESTORE from JSON Backup ──────────────────────────────────
+  const handleImportBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.json')) {
+      alert('⚠️ Please select a SmartStudy JSON backup file (.json).');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const backup = JSON.parse(evt.target?.result as string);
+        if (!backup?.data || !backup?.app) {
+          alert('❌ Invalid backup file. Please use a SmartStudy backup JSON.');
+          return;
+        }
+
+        const summary = backup.summary || {};
+        const confirmed = window.confirm(
+          `📦 RESTORE BACKUP\n\nBackup from: ${backup.backup_created_at ? new Date(backup.backup_created_at).toLocaleString() : 'Unknown'}\n\n📊 Contains:\n• ${backup.data.students?.length || 0} students\n• ${backup.data.attendance?.length || 0} attendance records\n• ${backup.data.exams?.length || 0} exams\n• ${backup.data.weekly_timetable?.length || 0} timetable entries\n\n⚠️ This will ADD data from backup on top of existing data (no overwrite).\n\nProceed with restore?`
+        );
+
+        if (!confirmed) return;
+
+        setResetting(true);
+        let restored = 0;
+        let errors = 0;
+
+        // Restore students (upsert by id)
+        if (backup.data.students?.length > 0) {
+          const { error } = await supabase.from('students').upsert(
+            backup.data.students.map((s: any) => ({ id: s.id, name: s.name, batch: s.batch, created_at: s.created_at })),
+            { onConflict: 'id' }
+          );
+          if (!error) restored += backup.data.students.length;
+          else errors++;
+        }
+
+        // Restore attendance
+        if (backup.data.attendance?.length > 0) {
+          const chunks = [];
+          for (let i = 0; i < backup.data.attendance.length; i += 50) {
+            chunks.push(backup.data.attendance.slice(i, i + 50));
+          }
+          for (const chunk of chunks) {
+            const { error } = await supabase.from('attendance').upsert(
+              chunk.map((a: any) => ({ id: a.id, student_id: a.student_id, date: a.date, checkin_time: a.checkin_time, points: a.points, rank_today: a.rank_today })),
+              { onConflict: 'id' }
+            );
+            if (!error) restored += chunk.length;
+            else errors++;
+          }
+        }
+
+        // Restore exams
+        if (backup.data.exams?.length > 0) {
+          const { error } = await supabase.from('exams').upsert(
+            backup.data.exams.map((ex: any) => ({ id: ex.id, name: ex.name, exam_date: ex.exam_date })),
+            { onConflict: 'id' }
+          );
+          if (!error) restored += backup.data.exams.length;
+          else errors++;
+        }
+
+        // Restore timetable
+        if (backup.data.weekly_timetable?.length > 0) {
+          const { error } = await supabase.from('weekly_timetable').upsert(
+            backup.data.weekly_timetable.map((t: any) => ({ id: t.id, day_of_week: t.day_of_week, class_name: t.class_name, slot_number: t.slot_number, subject: t.subject, topic: t.topic })),
+            { onConflict: 'id' }
+          );
+          if (!error) restored += backup.data.weekly_timetable.length;
+          else errors++;
+        }
+
+        setResetting(false);
+
+        if (errors === 0) {
+          alert(`✅ Restore Complete!\n\n${restored} records successfully restored from backup.\n\nRefreshing data...`);
+        } else {
+          alert(`⚠️ Restore completed with some issues.\n${restored} records restored, ${errors} tables had errors.\nSome data may already exist (that's OK).`);
+        }
+
+        fetchData();
+      } catch (err: any) {
+        setResetting(false);
+        alert('❌ Restore failed: Invalid or corrupted backup file.\n' + err.message);
+      }
+    };
+
+    reader.readAsText(file);
+    // Reset the input so the same file can be selected again
+    e.target.value = '';
+  };
+
   // 3. Main Admin Dashboard
   return (
     <div className="w-full min-h-screen bg-[#F0FDF4] px-4 pt-4 pb-24">
@@ -567,7 +952,7 @@ const Admin: React.FC = () => {
         </div>
 
         {/* Navigation Tabs */}
-        <div className="bg-white p-1.5 rounded-2xl border border-[#D1FAE5] grid grid-cols-4 gap-1 text-center shadow-sm">
+        <div className="bg-white p-1.5 rounded-2xl border border-[#D1FAE5] grid grid-cols-5 gap-1 text-center shadow-sm">
           <button
             onClick={() => setActiveTab('attendance')}
             className={`py-2 rounded-xl text-xs font-bold transition-all ${
@@ -576,7 +961,7 @@ const Admin: React.FC = () => {
                 : 'text-[#64748B] hover:text-[#064E3B]'
             }`}
           >
-            📋 Attendance
+            📋 Attend
           </button>
           <button
             onClick={() => setActiveTab('planner')}
@@ -586,7 +971,7 @@ const Admin: React.FC = () => {
                 : 'text-[#64748B] hover:text-[#064E3B]'
             }`}
           >
-            📅 Timetable
+            📅 Plan
           </button>
           <button
             onClick={() => setActiveTab('exams')}
@@ -606,7 +991,17 @@ const Admin: React.FC = () => {
                 : 'text-[#64748B] hover:text-[#064E3B]'
             }`}
           >
-            📢 Message
+            📢 Msg
+          </button>
+          <button
+            onClick={() => setActiveTab('data')}
+            className={`py-2 rounded-xl text-xs font-bold transition-all ${
+              activeTab === 'data'
+                ? 'bg-[#DC2626] text-white shadow-sm'
+                : 'text-[#DC2626] hover:bg-red-50'
+            }`}
+          >
+            🗄️ Data
           </button>
         </div>
 
@@ -948,6 +1343,185 @@ const Admin: React.FC = () => {
             >
               Publish Announcement to All Students 📢
             </button>
+          </div>
+        )}
+
+        {/* TAB 5: DATA MANAGEMENT (Backup & Reset) */}
+        {activeTab === 'data' && (
+          <div className="space-y-4">
+
+            {/* Backup Section */}
+            <div className="bg-white rounded-3xl p-5 border border-[#D1FAE5] shadow-sm space-y-3">
+              <div className="flex items-center gap-2 pb-2 border-b border-[#D1FAE5]">
+                <span className="text-xl">💾</span>
+                <div>
+                  <h3 className="text-sm font-black text-[#064E3B]">Backup & Export Data</h3>
+                  <p className="text-[10px] text-[#64748B]">Download your data before making any changes</p>
+                </div>
+              </div>
+
+              <div className="space-y-2.5">
+                <button
+                  onClick={handleFullBackup}
+                  disabled={resetting}
+                  className="w-full flex items-center justify-between px-4 py-3.5 bg-[#ECFDF5] border-2 border-[#10B981] rounded-2xl hover:bg-[#D1FAE5] transition-all disabled:opacity-50"
+                >
+                  <div className="text-left">
+                    <p className="text-xs font-black text-[#064E3B]">🗃️ Full Database Backup</p>
+                    <p className="text-[10px] text-[#059669] font-semibold">Students, Attendance, Exams, Timetable, Announcements</p>
+                  </div>
+                  <span className="text-[10px] font-black text-[#047857] bg-white px-2 py-1 rounded-lg border border-[#D1FAE5]">JSON</span>
+                </button>
+
+                <button
+                  onClick={handleCSVBackup}
+                  disabled={resetting}
+                  className="w-full flex items-center justify-between px-4 py-3.5 bg-[#ECFDF5] border-2 border-[#10B981] rounded-2xl hover:bg-[#D1FAE5] transition-all disabled:opacity-50"
+                >
+                  <div className="text-left">
+                    <p className="text-xs font-black text-[#064E3B]">📊 Attendance Log Export</p>
+                    <p className="text-[10px] text-[#059669] font-semibold">All check-in records with times, ranks & points</p>
+                  </div>
+                  <span className="text-[10px] font-black text-[#047857] bg-white px-2 py-1 rounded-lg border border-[#D1FAE5]">CSV</span>
+                </button>
+
+                <button
+                  onClick={handleStudentsCSVExport}
+                  disabled={resetting}
+                  className="w-full flex items-center justify-between px-4 py-3.5 bg-[#ECFDF5] border-2 border-[#10B981] rounded-2xl hover:bg-[#D1FAE5] transition-all disabled:opacity-50"
+                >
+                  <div className="text-left">
+                    <p className="text-xs font-black text-[#064E3B]">👥 Student List with Stats</p>
+                    <p className="text-[10px] text-[#059669] font-semibold">Names, classes, points, streaks and medals</p>
+                  </div>
+                  <span className="text-[10px] font-black text-[#047857] bg-white px-2 py-1 rounded-lg border border-[#D1FAE5]">CSV</span>
+                </button>
+              </div>
+
+              {resetting && (
+                <div className="flex items-center gap-2 text-xs text-[#059669] font-bold pt-1">
+                  <div className="w-4 h-4 border-2 border-[#059669] border-t-transparent rounded-full animate-spin" />
+                  Processing...
+                </div>
+              )}
+            </div>
+
+            {/* Import / Restore Section */}
+            <div className="bg-white rounded-3xl p-5 border border-blue-100 shadow-sm space-y-3">
+              <div className="flex items-center gap-2 pb-2 border-b border-blue-100">
+                <span className="text-xl">📥</span>
+                <div>
+                  <h3 className="text-sm font-black text-blue-700">Import / Restore from Backup</h3>
+                  <p className="text-[10px] text-blue-500">Select a SmartStudy JSON backup file to restore</p>
+                </div>
+              </div>
+
+              <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-2xl">
+                <p className="text-xs font-black text-blue-700 mb-1">📂 Restore from JSON Backup</p>
+                <p className="text-[10px] text-blue-500 font-semibold mb-3">
+                  Merges backup data with existing database (safe – no overwrites of current data)
+                </p>
+                <label className={`flex items-center justify-center gap-2 w-full py-3 rounded-xl text-xs font-bold cursor-pointer transition-all border-2 border-dashed border-blue-400 text-blue-700 hover:bg-blue-100 ${resetting ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <span>📁 Choose Backup File (.json)</span>
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={handleImportBackup}
+                    className="hidden"
+                    disabled={resetting}
+                  />
+                </label>
+              </div>
+
+              <div className="p-3 bg-blue-50 rounded-xl text-[10px] text-blue-600 font-semibold">
+                💡 <strong>How it works:</strong> Students and records from the backup are added using upsert — existing matching records are skipped, so no data is lost.
+              </div>
+            </div>
+
+            {/* Reset Section */}
+            <div className="bg-white rounded-3xl p-5 border border-red-100 shadow-sm space-y-3">
+              <div className="flex items-center gap-2 pb-2 border-b border-red-100">
+                <span className="text-xl">⚠️</span>
+                <div>
+                  <h3 className="text-sm font-black text-red-600">Reset Data</h3>
+                  <p className="text-[10px] text-red-400">Always backup first before resetting!</p>
+                </div>
+              </div>
+
+              <div className="space-y-2.5">
+                {/* Reset Today */}
+                <div className="p-3.5 bg-orange-50 border border-orange-200 rounded-2xl">
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <p className="text-xs font-black text-orange-700">🔄 Reset Today's Attendance</p>
+                      <p className="text-[10px] text-orange-500 font-semibold mt-0.5">
+                        Clear {selectedDate} records for Class {selectedClass}
+                      </p>
+                    </div>
+                    <span className="text-[9px] font-bold text-orange-600 bg-orange-100 px-2 py-0.5 rounded">Safe</span>
+                  </div>
+                  <button
+                    onClick={handleResetTodayAttendance}
+                    disabled={resetting}
+                    className="w-full py-2 bg-orange-500 text-white text-xs font-bold rounded-xl hover:bg-orange-600 transition-all disabled:opacity-50"
+                  >
+                    Reset Today ({selectedDate})
+                  </button>
+                </div>
+
+                {/* Reset All Attendance */}
+                <div className="p-3.5 bg-red-50 border border-red-200 rounded-2xl">
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <p className="text-xs font-black text-red-700">🗑️ Reset All Attendance & Scores</p>
+                      <p className="text-[10px] text-red-500 font-semibold mt-0.5">
+                        Clear all records but keep student accounts
+                      </p>
+                    </div>
+                    <span className="text-[9px] font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded">Careful</span>
+                  </div>
+                  <button
+                    onClick={handleResetAllAttendance}
+                    disabled={resetting}
+                    className="w-full py-2 bg-red-500 text-white text-xs font-bold rounded-xl hover:bg-red-600 transition-all disabled:opacity-50"
+                  >
+                    Reset All Attendance & Leaderboard
+                  </button>
+                </div>
+
+                {/* Factory Reset */}
+                <div className="p-3.5 bg-red-50 border-2 border-red-400 rounded-2xl">
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <p className="text-xs font-black text-red-800">🚨 Factory Reset</p>
+                      <p className="text-[10px] text-red-600 font-semibold mt-0.5">
+                        Delete ALL students + ALL data permanently
+                      </p>
+                    </div>
+                    <span className="text-[9px] font-bold text-white bg-red-600 px-2 py-0.5 rounded">DANGER</span>
+                  </div>
+                  <button
+                    onClick={handleFactoryReset}
+                    disabled={resetting}
+                    className="w-full py-2 bg-red-700 text-white text-xs font-bold rounded-xl hover:bg-red-800 transition-all disabled:opacity-50"
+                  >
+                    🚨 Complete Factory Reset
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Info box */}
+            <div className="bg-[#FFFBEB] rounded-2xl p-4 border border-amber-200 text-xs text-amber-800">
+              <p className="font-black mb-1.5">💡 Admin Data Guide</p>
+              <div className="space-y-1 font-semibold leading-relaxed">
+                <p>📊 <strong>CSV exports</strong> open in Excel / Google Sheets — share with management.</p>
+                <p>🗃️ <strong>JSON backup</strong> saves everything — use before any reset.</p>
+                <p>📥 <strong>Import</strong> restores from JSON backup safely (no data loss).</p>
+                <p>🔄 <strong>Reset Today</strong> is safe — students can re-check in.</p>
+                <p>🚨 <strong>Factory Reset</strong> is permanent — always backup first!</p>
+              </div>
+            </div>
           </div>
         )}
 
