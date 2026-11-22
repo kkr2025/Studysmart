@@ -14,7 +14,7 @@ const Setup: React.FC<SetupProps> = ({ onComplete }) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !batch) {
-      setError('Name and Batch are required to proceed.');
+      setError('Name and Class are required to proceed.');
       return;
     }
 
@@ -79,7 +79,7 @@ const Setup: React.FC<SetupProps> = ({ onComplete }) => {
         </div>
 
         <div className="space-y-3">
-          <label className="text-[10px] font-black text-emerald-200 uppercase tracking-widest ml-2">Current Batch</label>
+          <label className="text-[10px] font-black text-emerald-200 uppercase tracking-widest ml-2">Class & Division</label>
           <div className="relative">
             <select
               className="w-full px-6 py-5 rounded-2xl border border-white/10 bg-black/30 focus:bg-white/10 focus:outline-none focus:ring-4 focus:ring-emerald-500/30 transition-all font-bold text-white appearance-none cursor-pointer tracking-wide"
@@ -87,10 +87,12 @@ const Setup: React.FC<SetupProps> = ({ onComplete }) => {
               onChange={(e) => setBatch(e.target.value)}
               disabled={loading}
             >
-              <option value="" disabled className="text-gray-500">Select your batch</option>
-              <option value="S1" className="text-white bg-slate-900">S1 Batch</option>
-              <option value="S2" className="text-white bg-slate-900">S2 Batch</option>
-              <option value="S3" className="text-white bg-slate-900">S3 Batch</option>
+              <option value="" disabled className="text-gray-500">Select your class</option>
+              {['10A', '10B', '10C', '10D', '10E', '10F', '10G', '10H', '10I', '10J', '10K', '10L', '10M', '10N'].map((cls) => (
+                <option key={cls} value={cls} className="text-white bg-slate-900">
+                  Class {cls}
+                </option>
+              ))}
             </select>
             <div className="absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none text-white/50">
               ▼

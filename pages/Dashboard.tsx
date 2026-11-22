@@ -178,7 +178,7 @@ const Dashboard: React.FC<DashboardProps> = ({ studentId }) => {
               <p className="text-xs font-semibold text-[#64748B] uppercase tracking-wide mb-1">PHSS Student</p>
               <h1 className="text-3xl sm:text-4xl font-bold text-[#0F172A] tracking-tight">{student?.name}</h1>
               <span className="inline-block mt-2 px-3 py-1 bg-[#DBEAFE] text-[#1D4ED8] text-xs font-bold uppercase tracking-wide rounded-full">
-                {student?.batch} Batch
+                Class {student?.batch}
               </span>
             </div>
             <div className={`${rankBadge.bg} ${rankBadge.color} px-4 py-3 rounded-xl text-sm font-bold text-center min-w-[120px] shadow-sm`}>
