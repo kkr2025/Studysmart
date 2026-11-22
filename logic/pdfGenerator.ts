@@ -1,266 +1,267 @@
-
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { getFormattedDate } from './utils';
 
-// Define interface for the data we expect
-interface AttendanceRecord {
-    rank_today: number;
-    students?: {
-        name: string;
-        batch: string;
-    };
-    checkin_time: string;
-    points: number;
-}
-
-
-
-// Logic to exclude specific test accounts
+// Test accounts to exclude from reports
 const EXCLUDED_STUDENTS = ['KPS', 'KKR', 'SAL', 'KRISHNA'];
 
-export const generateMonthlyPDF = (
-    allStudents: any[]
+const isExcluded = (name: string) =>
+  EXCLUDED_STUDENTS.some(ex => name?.toUpperCase().includes(ex));
+
+// ─── DAILY ATTENDANCE PDF ────────────────────────────────────────────────────
+export const generateAttendancePDF = (
+  date: string,
+  totalStudents: number,
+  attendanceData: any[]
 ) => {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const date = new Date().toLocaleDateString();
+  const doc = new jsPDF();
+  const pageWidth = doc.internal.pageSize.getWidth();
 
-    // FILTER DATA: Exclude test accounts
-    const validStudents = allStudents.filter(s =>
-        !EXCLUDED_STUDENTS.some(excluded => s.name?.toUpperCase().includes(excluded))
-    );
+  // Filter and sort
+  const valid = attendanceData
+    .filter(r => !isExcluded(r.students?.name || ''))
+    .sort((a, b) => (a.rank_today || 9999) - (b.rank_today || 9999));
 
-    // Sort by Total Points (High to Low)
-    validStudents.sort((a, b) => (b.total_points || 0) - (a.total_points || 0));
+  const present = valid.length;
+  const absent = Math.max(0, totalStudents - present);
 
-    // --- TITLE SECTION ---
-    doc.setFillColor(255, 255, 255);
-    doc.rect(0, 0, pageWidth, 40, 'F');
+  // ─── Header ───
+  doc.setFillColor(6, 78, 59); // Forest Green #064E3B
+  doc.rect(0, 0, pageWidth, 38, 'F');
 
-    // Logo / Brand
-    doc.setFontSize(24);
-    doc.setTextColor(37, 99, 235); // Blue-600
+  doc.setFontSize(22);
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.text('SmartStudy', 14, 16);
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(167, 243, 208); // Green-200
+  doc.text('PHSS Pandallur • Daily Attendance Report', 14, 23);
+  doc.text(`Date: ${date}`, 14, 30);
+
+  // Stats boxes
+  const boxY = 10;
+  // Present box
+  doc.setFillColor(16, 185, 129); // #10B981
+  doc.roundedRect(pageWidth - 85, boxY, 35, 20, 2, 2, 'F');
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(255, 255, 255);
+  doc.text(String(present), pageWidth - 70, boxY + 10, { align: 'center' });
+  doc.setFontSize(7);
+  doc.text('PRESENT', pageWidth - 70, boxY + 16, { align: 'center' });
+
+  // Absent box
+  doc.setFillColor(220, 38, 38); // Red
+  doc.roundedRect(pageWidth - 46, boxY, 35, 20, 2, 2, 'F');
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.text(String(absent), pageWidth - 29, boxY + 10, { align: 'center' });
+  doc.setFontSize(7);
+  doc.text('ABSENT', pageWidth - 29, boxY + 16, { align: 'center' });
+
+  let currentY = 48;
+
+  // ─── Top 10 Early Birds ───
+  if (valid.length > 0) {
+    doc.setFontSize(13);
+    doc.setTextColor(6, 78, 59);
     doc.setFont('helvetica', 'bold');
-    doc.text('SmartStudy', 14, 20);
-
-    doc.setFontSize(10);
-    doc.setTextColor(100, 116, 139); // Slate-500
-    doc.setFont('helvetica', 'normal');
-    doc.text('PHSS Pandallur - Monthly Report', 14, 26);
-
-    // Date Box
-    doc.setFillColor(241, 245, 249); // Slate-100
-    doc.roundedRect(pageWidth - 60, 10, 46, 18, 2, 2, 'F');
-    doc.setFontSize(8);
-    doc.setTextColor(71, 85, 105);
-    doc.text('GENERATED ON', pageWidth - 55, 16);
-    doc.setFontSize(10);
-    doc.setTextColor(15, 23, 42); // Slate-900
-    doc.setFont('helvetica', 'bold');
-    doc.text(date, pageWidth - 55, 23);
-
-    let currentY = 45;
-
-    // --- TOP 10 LEADERS ---
-    doc.setFontSize(14);
-    doc.setTextColor(22, 163, 74); // Green-600
-    doc.setFont('helvetica', 'bold');
-    doc.text('TOP 10 LEADERS', 14, currentY);
-    currentY += 8;
-
-    const top10 = validStudents.slice(0, 10);
+    doc.text('🏆 Top 10 Early Birds', 14, currentY);
+    currentY += 7;
 
     autoTable(doc, {
-        startY: currentY,
-        head: [['Rank', 'Student Name', 'Batch', 'Total Points', 'Medal']],
-        body: top10.map((s, index) => [
-            `#${index + 1}`,
-            s.name || 'Unknown',
-            s.batch || '-',
-            s.total_points || 0,
-            s.medal_level || 'Seeker'
-        ]),
-        theme: 'grid',
-        headStyles: { fillColor: [22, 163, 74], textColor: 255, fontStyle: 'bold', halign: 'center' },
-        bodyStyles: { textColor: 50, halign: 'center', fontSize: 10, fontStyle: 'bold' },
-        alternateRowStyles: { fillColor: [240, 253, 244] }, // Green-50
-        margin: { left: 14, right: 14 },
+      startY: currentY,
+      head: [['Rank', 'Student Name', 'Class', 'Check-in Time', 'Points']],
+      body: valid.slice(0, 10).map(r => [
+        `#${r.rank_today || '-'}`,
+        r.students?.name || 'Unknown',
+        r.students?.batch || '-',
+        r.checkin_time
+          ? new Date(r.checkin_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          : '-',
+        `+${r.points || 0} pts`,
+      ]),
+      theme: 'grid',
+      headStyles: { fillColor: [4, 120, 87], textColor: 255, fontStyle: 'bold', halign: 'center' },
+      bodyStyles: { halign: 'center', fontSize: 9 },
+      columnStyles: { 1: { halign: 'left', fontStyle: 'bold' } },
+      alternateRowStyles: { fillColor: [236, 253, 245] },
+      margin: { left: 14, right: 14 },
     });
 
     // @ts-ignore
-    currentY = doc.lastAutoTable.finalY + 15;
+    currentY = doc.lastAutoTable.finalY + 12;
+  }
 
-    // --- FULL RANKING LIST ---
-    doc.setFontSize(14);
-    doc.setTextColor(71, 85, 105);
-    doc.setFont('helvetica', 'bold');
-    doc.text('COMPREHENSIVE RANKING', 14, currentY);
-    currentY += 8;
+  // ─── Full Attendance List ───
+  doc.setFontSize(13);
+  doc.setTextColor(71, 85, 105);
+  doc.setFont('helvetica', 'bold');
+  doc.text('📋 Complete Attendance Record', 14, currentY);
+  currentY += 7;
 
-    autoTable(doc, {
-        startY: currentY,
-        head: [['Rank', 'Student Name', 'Batch', 'Total Points', 'Medal', 'Status']],
-        body: validStudents.map((s, index) => {
-            let status = 'Active';
-            if (index < 10) status = 'LEADER';
-            else if (index >= validStudents.length - 10) status = 'NEEDS FOCUS';
+  autoTable(doc, {
+    startY: currentY,
+    head: [['Rank', 'Student Name', 'Class', 'Check-in Time', 'Points']],
+    body: valid.map(r => [
+      r.rank_today || '-',
+      r.students?.name || 'Unknown',
+      r.students?.batch || '-',
+      r.checkin_time
+        ? new Date(r.checkin_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        : '-',
+      `${r.points || 0} pts`,
+    ]),
+    theme: 'striped',
+    headStyles: { fillColor: [71, 85, 105], textColor: 255, fontStyle: 'bold' },
+    bodyStyles: { textColor: 50, fontSize: 9 },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    columnStyles: { 1: { halign: 'left', fontStyle: 'bold' } },
+    margin: { left: 14, right: 14 },
+  });
 
-            return [
-                index + 1,
-                s.name || 'Unknown',
-                s.batch || '-',
-                s.total_points || 0,
-                s.medal_level || 'Seeker',
-                status
-            ];
-        }),
-        theme: 'striped',
-        headStyles: { fillColor: [71, 85, 105], textColor: 255, fontStyle: 'bold' },
-        bodyStyles: { textColor: 70 },
-        margin: { left: 14, right: 14 },
-        columnStyles: {
-            3: { fontStyle: 'bold', textColor: [37, 99, 235] }, // Points in Blue
-            5: { fontStyle: 'italic' } // Status
-        },
-        didParseCell: function (data) {
-            // Highlight bottom 10 students in red text
-            if (data.section === 'body' && data.row.index >= validStudents.length - 10) {
-                if (data.column.index === 5) data.cell.styles.textColor = [220, 38, 38]; // Red
-            }
-        }
-    });
+  // @ts-ignore
+  const finalY = doc.lastAutoTable.finalY + 8;
+  doc.setFontSize(8);
+  doc.setTextColor(100);
+  doc.setFont('helvetica', 'italic');
+  doc.text(
+    `Present: ${present} | Absent: ${absent} | Total: ${totalStudents} | Generated by SmartStudy • PHSS Pandallur`,
+    14,
+    finalY
+  );
 
-    // @ts-ignore
-    const finalY = doc.lastAutoTable.finalY + 10;
-    doc.setFontSize(10);
-    doc.setTextColor(100);
-    doc.setFont('helvetica', 'italic');
-    doc.text(`Total Students Tracked: ${validStudents.length} | Keep Pushing! 🚀`, 14, finalY);
-
-    doc.save(`SmartStudy_Monthly_Report_${date.replace(/\//g, '-')}.pdf`);
+  doc.save(`SmartStudy_Daily_${date}.pdf`);
 };
 
-export const generateAttendancePDF = (
-    date: string,
-    totalStudents: number,
-    attendanceData: any[] // We will type this properly if possible, but 'any' allows flexibility for now
+// ─── MONTHLY / LEADERBOARD PDF ───────────────────────────────────────────────
+// Called as: generateMonthlyPDF(monthStr, classStudents.length, formattedData)
+// formattedData: { name, batch, total_points, current_streak, medal_level }[]
+export const generateMonthlyPDF = (
+  month: string,
+  totalStudents: number,
+  statsData: any[]
 ) => {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
+  const doc = new jsPDF();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const generatedDate = new Date().toLocaleDateString('en-GB');
 
-    // FILTER DATA: Exclude test accounts
-    const validAttendance = attendanceData.filter(record =>
-        !EXCLUDED_STUDENTS.some(excluded => record.students?.name?.toUpperCase().includes(excluded))
-    );
+  // Filter and sort
+  const valid = statsData
+    .filter(s => !isExcluded(s.name || ''))
+    .sort((a, b) => (b.total_points || 0) - (a.total_points || 0));
 
-    // Sort by rank/time
-    validAttendance.sort((a, b) => (a.rank_today || 9999) - (b.rank_today || 9999));
+  // ─── Header ───
+  doc.setFillColor(6, 78, 59); // #064E3B
+  doc.rect(0, 0, pageWidth, 38, 'F');
 
-    // --- TITLE SECTION ---
-    doc.setFillColor(255, 255, 255);
-    doc.rect(0, 0, pageWidth, 40, 'F');
+  doc.setFontSize(22);
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.text('SmartStudy', 14, 16);
 
-    // Logo / Brand
-    doc.setFontSize(24);
-    doc.setTextColor(37, 99, 235); // Blue-600
-    doc.setFont('helvetica', 'bold');
-    doc.text('SmartStudy', 14, 20);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(167, 243, 208);
+  doc.text('PHSS Pandallur • Monthly Performance Report', 14, 23);
+  doc.text(`Period: ${month} | Generated: ${generatedDate}`, 14, 30);
 
-    doc.setFontSize(10);
-    doc.setTextColor(100, 116, 139); // Slate-500
-    doc.setFont('helvetica', 'normal');
-    doc.text('PHSS Pandallur', 14, 26);
+  // Total students badge
+  doc.setFillColor(16, 185, 129);
+  doc.roundedRect(pageWidth - 55, 10, 44, 20, 2, 2, 'F');
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(255, 255, 255);
+  doc.text(String(valid.length), pageWidth - 33, 20, { align: 'center' });
+  doc.setFontSize(7);
+  doc.text('STUDENTS', pageWidth - 33, 26, { align: 'center' });
 
-    // Date Box
-    doc.setFillColor(241, 245, 249); // Slate-100
-    doc.roundedRect(pageWidth - 60, 10, 46, 18, 2, 2, 'F');
-    doc.setFontSize(8);
-    doc.setTextColor(71, 85, 105);
-    doc.text('REPORT DATE', pageWidth - 55, 16);
-    doc.setFontSize(10);
-    doc.setTextColor(15, 23, 42); // Slate-900
-    doc.setFont('helvetica', 'bold');
-    doc.text(date, pageWidth - 55, 23);
+  let currentY = 48;
 
-    let currentY = 45;
+  // ─── Top 10 Leaders ───
+  doc.setFontSize(13);
+  doc.setTextColor(6, 78, 59);
+  doc.setFont('helvetica', 'bold');
+  doc.text('🏆 Top 10 Performers', 14, currentY);
+  currentY += 7;
 
-    // --- TOP 10 SPECIAL MENTION ---
-    if (validAttendance.length > 0) {
-        doc.setFontSize(14);
-        doc.setTextColor(37, 99, 235);
-        doc.setFont('helvetica', 'bold');
-        doc.text('🏆 TOP 10 EARLY RISERS', 14, currentY);
-        currentY += 8;
+  autoTable(doc, {
+    startY: currentY,
+    head: [['Rank', 'Student Name', 'Class', 'Total Points', 'Streak', 'Medal']],
+    body: valid.slice(0, 10).map((s, i) => [
+      `#${i + 1}`,
+      s.name || 'Unknown',
+      s.batch || '-',
+      s.total_points || 0,
+      `${s.current_streak || 0} days`,
+      s.medal_level || 'Seeker',
+    ]),
+    theme: 'grid',
+    headStyles: { fillColor: [4, 120, 87], textColor: 255, fontStyle: 'bold', halign: 'center' },
+    bodyStyles: { halign: 'center', fontSize: 9 },
+    columnStyles: {
+      1: { halign: 'left', fontStyle: 'bold' },
+      3: { fontStyle: 'bold', textColor: [6, 78, 59] },
+    },
+    alternateRowStyles: { fillColor: [236, 253, 245] },
+    margin: { left: 14, right: 14 },
+  });
 
-        const top10 = validAttendance.slice(0, 10);
+  // @ts-ignore
+  currentY = doc.lastAutoTable.finalY + 14;
 
-        autoTable(doc, {
-            startY: currentY,
-            head: [['Rank', 'Student Name', 'Batch', 'Check-in Time', 'Points']],
-            body: top10.map(r => [
-                r.rank_today ? `#${r.rank_today}` : '-',
-                r.students?.name || 'Unknown',
-                r.students?.batch || '-',
-                new Date(r.checkin_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                `+${r.points} pts`
-            ]),
-            theme: 'grid',
-            headStyles: { fillColor: [37, 99, 235], textColor: 255, fontStyle: 'bold', halign: 'center' },
-            bodyStyles: { textColor: 50, halign: 'center', fontSize: 10 },
-            columnStyles: {
-                0: { fontStyle: 'bold', textColor: [37, 99, 235] }, // Rank
-                1: { halign: 'left', fontStyle: 'bold' }, // Name
-                4: { fontStyle: 'bold', textColor: [22, 163, 74] } // Points
-            },
-            margin: { left: 14, right: 14 },
-        });
+  // ─── Full Ranking ───
+  doc.setFontSize(13);
+  doc.setTextColor(71, 85, 105);
+  doc.setFont('helvetica', 'bold');
+  doc.text('📊 Complete Class Ranking', 14, currentY);
+  currentY += 7;
 
-        // @ts-ignore
-        currentY = doc.lastAutoTable.finalY + 15;
-    }
+  autoTable(doc, {
+    startY: currentY,
+    head: [['Rank', 'Student Name', 'Class', 'Points', 'Streak', 'Medal', 'Status']],
+    body: valid.map((s, i) => {
+      let status = 'Active';
+      if (i < 10) status = 'LEADER 🌟';
+      else if (i >= valid.length - 5) status = 'Needs Focus ⚠️';
+      return [
+        i + 1,
+        s.name || 'Unknown',
+        s.batch || '-',
+        s.total_points || 0,
+        `${s.current_streak || 0}d`,
+        s.medal_level || 'Seeker',
+        status,
+      ];
+    }),
+    theme: 'striped',
+    headStyles: { fillColor: [71, 85, 105], textColor: 255, fontStyle: 'bold' },
+    bodyStyles: { textColor: 50, fontSize: 8 },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    columnStyles: {
+      1: { halign: 'left', fontStyle: 'bold' },
+      3: { fontStyle: 'bold', textColor: [6, 78, 59] },
+    },
+    margin: { left: 14, right: 14 },
+    didParseCell: (data) => {
+      if (data.section === 'body' && data.row.index >= valid.length - 5 && data.column.index === 6) {
+        data.cell.styles.textColor = [220, 38, 38];
+      }
+    },
+  });
 
-    // --- FULL ATTENDANCE LIST ---
-    doc.setFontSize(14);
-    doc.setTextColor(71, 85, 105);
-    doc.setFont('helvetica', 'bold');
-    doc.text('📋 FULL ATTENDANCE LIST', 14, currentY);
-    currentY += 8;
+  // @ts-ignore
+  const finalY = doc.lastAutoTable.finalY + 10;
+  doc.setFontSize(8);
+  doc.setTextColor(100);
+  doc.setFont('helvetica', 'italic');
+  doc.text(
+    `Total Students: ${valid.length} | SmartStudy © 2026 • PHSS Pandallur | Keep Rising! 🚀`,
+    14,
+    finalY
+  );
 
-    autoTable(doc, {
-        startY: currentY,
-        head: [['Rank', 'Student Name', 'Batch', 'Check-in Time', 'Rewards']],
-        body: validAttendance.map(r => [
-            r.rank_today || '-',
-            r.students?.name || 'Unknown',
-            r.students?.batch || '-',
-            new Date(r.checkin_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            `${r.points} Points`
-        ]),
-        theme: 'striped',
-        headStyles: { fillColor: [100, 116, 139], textColor: 255, fontStyle: 'bold' },
-        bodyStyles: { textColor: 70 },
-        alternateRowStyles: { fillColor: [248, 250, 252] },
-        margin: { left: 14, right: 14 },
-    });
-
-    // --- LAZY / ABSENT LIST (Motivational Section) ---
-    // Note: To list absent students, we need the full student list passed to this function, 
-    // but typically PDF generators just show who DID attend. 
-    // Since the prompt asks to "mark those have lazy too", we usually interpret this as listing latecomers 
-    // or if we had the full list, listing absentees. 
-    // Given the arguments, we only see 'attendanceData'. 
-    // To show absentees properly, we'd need to change the function signature to accept 'allStudents'.
-    // For now, we will add a summary footer.
-
-    // Footer Summary
-    // @ts-ignore
-    const finalY = doc.lastAutoTable.finalY + 10;
-    doc.setFontSize(10);
-    doc.setTextColor(100);
-    doc.setFont('helvetica', 'italic');
-    doc.text(`Total Present: ${validAttendance.length} | Generated by SmartStudy Admin`, 14, finalY);
-
-    // Save
-    doc.save(`SmartStudy_Daily_Report_${date}.pdf`);
+  const safeMonth = month.replace(/\//g, '-');
+  doc.save(`SmartStudy_Monthly_${safeMonth}.pdf`);
 };

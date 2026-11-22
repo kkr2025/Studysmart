@@ -13,6 +13,7 @@ const Setup: React.FC<SetupProps> = ({ onComplete }) => {
   const [batch, setBatch] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [foundExisting, setFoundExisting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,18 +24,42 @@ const Setup: React.FC<SetupProps> = ({ onComplete }) => {
 
     setLoading(true);
     setError(null);
+    setFoundExisting(false);
 
     try {
-      // 1. Register student
+      const normalizedName = name.trim().toUpperCase();
+
+      // ─── STEP 1: Check if student already exists (same name + same class) ───
+      // This prevents duplicate student creation when a student re-registers after logout
+      const { data: existingStudents, error: searchError } = await supabase
+        .from('students')
+        .select('id, name, batch')
+        .eq('name', normalizedName)
+        .eq('batch', batch);
+
+      if (searchError) throw searchError;
+
+      // If we found an existing student with same name + class → reuse their account
+      if (existingStudents && existingStudents.length > 0) {
+        setFoundExisting(true);
+        const existingStudent = existingStudents[0];
+        // Brief delay so user sees the "Welcome back" message
+        await new Promise(resolve => setTimeout(resolve, 800));
+        // Restore session - student logs back in without creating a duplicate
+        onComplete(existingStudent.id);
+        return;
+      }
+
+      // ─── STEP 2: Truly new student - INSERT ─────────────────────────────────
       const { data: student, error: studentError } = await supabase
         .from('students')
-        .insert([{ name: name.trim().toUpperCase(), batch }])
+        .insert([{ name: normalizedName, batch }])
         .select()
         .single();
 
       if (studentError) throw studentError;
 
-      // 2. Initialize stats
+      // Initialize stats for new student
       const { error: statsError } = await supabase
         .from('student_stats')
         .insert([{
@@ -68,19 +93,32 @@ const Setup: React.FC<SetupProps> = ({ onComplete }) => {
           <p className="text-xs font-bold text-[#059669] uppercase tracking-widest mt-1">
             PHSS Pandallur Edition
           </p>
-          <p className="text-xs text-[#64748B] mt-2 font-medium">Daily Attendance & Study Motivation Platform</p>
+          <p className="text-xs text-[#64748B] mt-2 font-medium">Daily Attendance &amp; Study Motivation Platform</p>
         </div>
 
         {/* Form Card */}
         <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-xl shadow-emerald-950/5 border border-[#D1FAE5]">
-          <h2 className="text-xl font-bold text-[#064E3B] mb-1">Student Registration</h2>
-          <p className="text-xs text-[#64748B] mb-6">Enter your details once to get started</p>
+          <h2 className="text-xl font-bold text-[#064E3B] mb-1">Student Login / Register</h2>
+          <p className="text-xs text-[#64748B] mb-5">
+            First time? Enter your details to register. Already registered? Same name + class will log you back in automatically.
+          </p>
+
+          {/* Welcome Back Banner */}
+          {foundExisting && (
+            <div className="mb-4 p-3 bg-[#ECFDF5] border border-[#A7F3D0] rounded-xl flex items-center gap-2">
+              <span className="text-lg">👋</span>
+              <div>
+                <p className="text-xs font-black text-[#047857]">Welcome back!</p>
+                <p className="text-[10px] text-[#059669] font-semibold">Found your account — restoring session...</p>
+              </div>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Student Name */}
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-[#064E3B] mb-2">
-                Student Full Name
+                Your Full Name
               </label>
               <input
                 type="text"
@@ -96,7 +134,7 @@ const Setup: React.FC<SetupProps> = ({ onComplete }) => {
             {/* Class & Division */}
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-[#064E3B] mb-2">
-                Class & Division
+                Class &amp; Division
               </label>
               <div className="relative">
                 <select
@@ -105,17 +143,23 @@ const Setup: React.FC<SetupProps> = ({ onComplete }) => {
                   onChange={(e) => setBatch(e.target.value)}
                   disabled={loading}
                 >
-                  <option value="" disabled className="text-gray-400">Select your class (10A to 10N)</option>
+                  <option value="" disabled>Select your class (10A to 10N)</option>
                   {CLASSES.map((cls) => (
-                    <option key={cls} value={cls} className="text-[#0F172A] py-1">
-                      Class {cls}
-                    </option>
+                    <option key={cls} value={cls}>Class {cls}</option>
                   ))}
                 </select>
                 <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-[#059669] font-bold text-xs">
                   ▼
                 </div>
               </div>
+            </div>
+
+            {/* Info hint */}
+            <div className="p-3 bg-[#F0FDF4] rounded-xl border border-[#D1FAE5] text-[10px] text-[#059669] font-semibold flex items-start gap-2">
+              <span className="mt-0.5">ℹ️</span>
+              <span>
+                If you logged out before, enter the <strong>exact same name and class</strong> — your account and progress will be restored. No duplicate will be created.
+              </span>
             </div>
 
             {/* Error Message */}
@@ -130,15 +174,15 @@ const Setup: React.FC<SetupProps> = ({ onComplete }) => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-gradient-to-r from-[#064E3B] via-[#047857] to-[#059669] text-white font-extrabold py-4 rounded-xl shadow-lg shadow-emerald-900/20 active:scale-98 transition-all flex justify-center items-center text-base tracking-wide mt-6 disabled:opacity-50"
+              className="w-full bg-gradient-to-r from-[#064E3B] via-[#047857] to-[#059669] text-white font-extrabold py-4 rounded-xl shadow-lg shadow-emerald-900/20 active:scale-98 transition-all flex justify-center items-center text-base tracking-wide mt-2 disabled:opacity-50"
             >
               {loading ? (
                 <div className="flex items-center gap-2">
                   <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                  <span>Setting Up Profile...</span>
+                  <span>{foundExisting ? 'Restoring Account...' : 'Setting Up Profile...'}</span>
                 </div>
               ) : (
-                'Start Learning 🚀'
+                'Enter SmartStudy 🚀'
               )}
             </button>
           </form>
@@ -152,9 +196,9 @@ const Setup: React.FC<SetupProps> = ({ onComplete }) => {
           </div>
         </div>
 
-        {/* Footer info */}
+        {/* Footer */}
         <div className="mt-8 text-center text-xs font-semibold text-[#059669]/70">
-          SmartStudy &copy; 2026 • PHSS Pandallur
+          SmartStudy © 2026 • PHSS Pandallur
         </div>
       </div>
     </div>

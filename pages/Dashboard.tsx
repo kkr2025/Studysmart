@@ -73,8 +73,13 @@ const Dashboard: React.FC<DashboardProps> = ({ studentId }) => {
       if (!std) {
         alert('Student profile not found. Please register again.');
         localStorage.removeItem('student_id');
+        localStorage.removeItem('student_batch');
         window.location.href = '/setup';
         return;
+      }
+      // Cache the student's class so the Leaderboard auto-filters to their class
+      if (std.batch) {
+        localStorage.setItem('student_batch', std.batch);
       }
       setStudent(std);
 
@@ -158,6 +163,7 @@ const Dashboard: React.FC<DashboardProps> = ({ studentId }) => {
   const handleLogout = () => {
     if (window.confirm('Do you want to log out from SmartStudy on this device?')) {
       localStorage.removeItem('student_id');
+      localStorage.removeItem('student_batch');
       window.location.href = '/setup';
     }
   };

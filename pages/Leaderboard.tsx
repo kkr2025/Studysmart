@@ -7,11 +7,28 @@ const CLASSES = ['All', '10A', '10B', '10C', '10D', '10E', '10F', '10G', '10H', 
 
 const Leaderboard: React.FC = () => {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
-  const [selectedClass, setSelectedClass] = useState('All');
   const [loading, setLoading] = useState(true);
+
+  // Auto-detect student's class from localStorage so the leaderboard defaults to their own class
+  const getStudentClass = (): string => {
+    return localStorage.getItem('student_batch') || 'All';
+  };
+
+  const [selectedClass, setSelectedClass] = useState<string>(getStudentClass);
 
   useEffect(() => {
     fetchLeaderboard();
+    // Also try to fetch the student's class from DB if not in localStorage
+    const studentId = localStorage.getItem('student_id');
+    const cachedBatch = localStorage.getItem('student_batch');
+    if (studentId && !cachedBatch) {
+      supabase.from('students').select('batch').eq('id', studentId).maybeSingle().then(({ data }) => {
+        if (data?.batch) {
+          localStorage.setItem('student_batch', data.batch);
+          setSelectedClass(data.batch);
+        }
+      });
+    }
   }, []);
 
   const fetchLeaderboard = async () => {
@@ -23,7 +40,7 @@ const Leaderboard: React.FC = () => {
         .select('*, students(name, batch)')
         .eq('date', today)
         .order('rank_today', { ascending: true })
-        .limit(50);
+        .limit(100);
 
       if (error) throw error;
       setEntries(data || []);
@@ -38,6 +55,15 @@ const Leaderboard: React.FC = () => {
     ? entries
     : entries.filter(e => e.students?.batch === selectedClass);
 
+  // Recalculate rank within the filtered class (1, 2, 3... within that class)
+  const rankedEntries = filteredEntries.map((entry, index) => ({
+    ...entry,
+    classRank: index + 1,
+  }));
+
+  const myBatch = localStorage.getItem('student_batch');
+  const isViewingOwnClass = selectedClass === myBatch;
+
   return (
     <div className="w-full min-h-screen bg-[#F0FDF4] px-4 pt-4 pb-24">
       <div className="w-full max-w-md mx-auto space-y-4">
@@ -50,52 +76,95 @@ const Leaderboard: React.FC = () => {
           <p className="text-xs font-semibold text-[#059669] mt-0.5">Top Morning Achievers • PHSS Pandallur</p>
         </div>
 
+        {/* My Class badge + filter note */}
+        {myBatch && (
+          <div className={`p-2.5 rounded-2xl border text-center text-xs font-bold flex items-center justify-center gap-2 ${
+            isViewingOwnClass
+              ? 'bg-[#ECFDF5] border-[#A7F3D0] text-[#047857]'
+              : 'bg-[#FFF7ED] border-[#FED7AA] text-[#92400E]'
+          }`}>
+            <span>{isViewingOwnClass ? '✅' : '👁️'}</span>
+            <span>
+              {isViewingOwnClass
+                ? `Showing Class ${myBatch} rankings (your class)`
+                : `Viewing Class ${selectedClass} • Your class is ${myBatch}`}
+            </span>
+          </div>
+        )}
+
         {/* Class Filter Bar */}
         <div className="bg-white p-2 rounded-2xl border border-[#D1FAE5] shadow-sm">
+          <p className="text-[9px] font-bold uppercase text-[#64748B] px-1 mb-1.5">Filter by Class:</p>
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
             {CLASSES.map((cls) => (
               <button
                 key={cls}
                 onClick={() => setSelectedClass(cls)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex-shrink-0 ${
                   selectedClass === cls
                     ? 'bg-[#047857] text-white shadow-sm'
+                    : cls === myBatch
+                    ? 'bg-[#ECFDF5] text-[#047857] border border-[#A7F3D0]'
                     : 'bg-[#F8FAFC] text-[#64748B] hover:bg-[#ECFDF5]'
                 }`}
               >
-                {cls === 'All' ? 'All Classes' : `Class ${cls}`}
+                {cls === 'All' ? '🌐 All' : cls === myBatch ? `${cls} ★` : `${cls}`}
               </button>
             ))}
           </div>
         </div>
+
+        {/* Stats summary */}
+        {!loading && (
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="bg-white p-2.5 rounded-xl border border-[#D1FAE5] shadow-sm">
+              <p className="text-[10px] font-bold text-[#64748B] uppercase">Showing</p>
+              <p className="text-lg font-black text-[#047857]">{rankedEntries.length}</p>
+              <p className="text-[9px] text-[#64748B] font-semibold">Students</p>
+            </div>
+            <div className="bg-white p-2.5 rounded-xl border border-[#D1FAE5] shadow-sm">
+              <p className="text-[10px] font-bold text-[#64748B] uppercase">Class</p>
+              <p className="text-lg font-black text-[#047857]">{selectedClass === 'All' ? 'All' : selectedClass}</p>
+              <p className="text-[9px] text-[#64748B] font-semibold">Filter</p>
+            </div>
+            <div className="bg-white p-2.5 rounded-xl border border-[#D1FAE5] shadow-sm">
+              <p className="text-[10px] font-bold text-[#64748B] uppercase">Total</p>
+              <p className="text-lg font-black text-[#047857]">{entries.length}</p>
+              <p className="text-[9px] text-[#64748B] font-semibold">All Classes</p>
+            </div>
+          </div>
+        )}
 
         {/* Entries List */}
         {loading ? (
           <div className="flex justify-center py-16">
             <div className="w-10 h-10 border-4 border-[#047857] border-t-transparent rounded-full animate-spin"></div>
           </div>
-        ) : filteredEntries.length === 0 ? (
+        ) : rankedEntries.length === 0 ? (
           <div className="bg-white rounded-3xl p-10 text-center border border-[#D1FAE5] shadow-sm">
             <div className="text-5xl mb-3">🌅</div>
             <p className="text-sm font-bold text-[#064E3B]">No Check-Ins Yet Today</p>
             <p className="text-xs text-[#64748B] mt-1">
               {selectedClass === 'All'
-                ? 'Be the first student to log attendance at 3:00 AM!'
+                ? 'Be the first student to log attendance!'
                 : `No check-ins yet for Class ${selectedClass}`}
             </p>
           </div>
         ) : (
           <div className="space-y-2.5">
-            {filteredEntries.map((entry, index) => {
+            {rankedEntries.map((entry, index) => {
               const isTop3 = index < 3;
               const medals = ['🥇', '🥈', '🥉'];
+              const isMe = entry.student_id === localStorage.getItem('student_id');
 
               return (
                 <div
                   key={entry.id}
                   className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between shadow-sm ${
-                    isTop3
-                      ? 'bg-white border-[#10B981] shadow-emerald-950/5'
+                    isMe
+                      ? 'bg-[#ECFDF5] border-[#059669] shadow-emerald-900/10'
+                      : isTop3
+                      ? 'bg-white border-[#10B981]'
                       : 'bg-white border-[#E2E8F0]'
                   }`}
                 >
@@ -104,13 +173,18 @@ const Leaderboard: React.FC = () => {
                       {isTop3 ? (
                         <span className="text-3xl">{medals[index]}</span>
                       ) : (
-                        <span className="text-base font-black text-[#64748B]">#{entry.rank_today}</span>
+                        <span className="text-base font-black text-[#64748B]">#{entry.classRank}</span>
                       )}
                     </div>
                     <div>
-                      <p className="font-black text-sm text-[#0F172A] truncate max-w-[170px]">
-                        {entry.students?.name}
-                      </p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-black text-sm text-[#0F172A] truncate max-w-[150px]">
+                          {entry.students?.name}
+                        </p>
+                        {isMe && (
+                          <span className="text-[9px] font-black text-white bg-[#047857] px-1.5 py-0.5 rounded">YOU</span>
+                        )}
+                      </div>
                       <span className="inline-block mt-0.5 text-[10px] font-bold text-[#047857] bg-[#ECFDF5] px-2 py-0.5 rounded-md border border-[#A7F3D0]">
                         Class {entry.students?.batch}
                       </span>
@@ -129,7 +203,16 @@ const Leaderboard: React.FC = () => {
           </div>
         )}
 
-        {/* Motivational Banner */}
+        {/* Refresh + Motivational Banner */}
+        <div className="flex gap-2">
+          <button
+            onClick={fetchLeaderboard}
+            className="flex-1 bg-white border border-[#D1FAE5] rounded-2xl py-2.5 text-xs font-bold text-[#047857] hover:bg-[#ECFDF5] transition-all"
+          >
+            🔄 Refresh Rankings
+          </button>
+        </div>
+
         <div className="bg-[#ECFDF5] rounded-2xl p-4 text-center border border-[#A7F3D0]">
           <p className="text-xs font-bold text-[#047857]">Rise and Shine! 🌅</p>
           <p className="text-[11px] text-[#064E3B] mt-0.5 italic">
